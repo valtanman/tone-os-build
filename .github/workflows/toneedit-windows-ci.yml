@@ -40,6 +40,7 @@ jobs:
           $text = Get-Content -LiteralPath $edit -Raw -Encoding UTF8
           if (!$text.Contains('ui.fonts_mut(') -or !$text.Contains('range.primary.index')) { throw 'Source content mismatch: editor.rs' }
           $text = $text.Replace('ui.fonts_mut(', 'ui.fonts(').Replace('range.primary.index', 'range.primary.ccursor.index')
+          $text = $text.Replace('buf: &dyn egui::TextBuffer', 'buf: &str').Replace('syntax::highlight(buf.as_str(),', 'syntax::highlight(buf,')
           [System.IO.File]::WriteAllText((Resolve-Path $edit), $text, [System.Text.UTF8Encoding]::new($false))
       - name: Compile and test full Rust EXE installer
         shell: pwsh
