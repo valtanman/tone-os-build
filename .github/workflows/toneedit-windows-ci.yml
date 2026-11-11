@@ -62,8 +62,8 @@ jobs:
           1..10 | ForEach-Object {
             $round = $_
             foreach ($exe in @('toneedit-studio.exe','toneedit-setup.exe','toneedit-uninstall.exe')) {
-              & (Join-Path $dir $exe) --self-test
-              if ($LASTEXITCODE -ne 0) { throw "Executable $exe failed round $round" }
+              $proc = Start-Process -FilePath (Join-Path $dir $exe) -ArgumentList '--self-test' -PassThru -Wait
+              if ($proc.ExitCode -ne 0) { throw "Executable $exe failed round $round with exit code $($proc.ExitCode)" }
               Write-Host "PASS core $round/10 $exe"
             }
           }
