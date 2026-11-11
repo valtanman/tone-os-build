@@ -42,6 +42,24 @@ jobs:
           $text = $text.Replace('ui.fonts_mut(', 'ui.fonts(').Replace('range.primary.index', 'range.primary.ccursor.index')
           $text = $text.Replace('buf: &dyn egui::TextBuffer', 'buf: &str').Replace('syntax::highlight(buf.as_str(),', 'syntax::highlight(buf,')
           [System.IO.File]::WriteAllText((Resolve-Path $edit), $text, [System.Text.UTF8Encoding]::new($false))
+      - name: Switch to wgpu renderer to avoid unsupported OpenGL on Windows CI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($manifest in @('Cargo.toml', 'packaging/setup/Cargo.toml', 'packaging/uninstall/Cargo.toml')) {
+            $p = Join-Path 'workspace/ToneEdit-Studio' $manifest
+            $t = Get-Content -LiteralPath $p -Raw -Encoding UTF8
+            if (!$t.Contains('"glow"')) { throw "OpenGL dependency missing at $p" }
+            $t = $t.Replace('"glow"', '"wgpu"')
+            [System.IO.File]::WriteAllText((Resolve-Path $p), $t, [System.Text.UTF8Encoding]::new($false))
+          }
+          foreach ($source in @('src/main.rs', 'packaging/setup/src/main.rs', 'packaging/uninstall/src/main.rs')) {
+            $p = Join-Path 'workspace/ToneEdit-Studio' $source
+            $t = Get-Content -LiteralPath $p -Raw -Encoding UTF8
+            if (!$t.Contains('let options = eframe::NativeOptions {')) { throw "NativeOptions missing at $p" }
+            $t = $t.Replace('let options = eframe::NativeOptions {', "let options = eframe::NativeOptions {`n        renderer: eframe::Renderer::Wgpu,")
+            [System.IO.File]::WriteAllText((Resolve-Path $p), $t, [System.Text.UTF8Encoding]::new($false))
+          }
       - name: Compile and test full Rust EXE installer
         shell: pwsh
         working-directory: workspace/ToneEdit-Studio

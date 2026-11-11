@@ -15,7 +15,11 @@ New-Item -ItemType Directory -Force -Path $captures | Out-Null
 function WindowTest([string]$filename, [int]$iteration) {
     $exe = Join-Path $root $filename
     if (!(Test-Path $exe)) { throw "Missing EXE: $exe" }
-    $proc = Start-Process -FilePath $exe -PassThru
+    $proc = if ($filename -eq "toneedit-uninstall.exe") {
+        Start-Process -FilePath $exe -ArgumentList '--worker' -PassThru
+    } else {
+        Start-Process -FilePath $exe -PassThru
+    }
     $opened = $false
     $operated = $false
     $screenshot = $false
