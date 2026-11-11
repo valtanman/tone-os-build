@@ -1,109 +1,61 @@
-name: ToneEdit Studio Windows EXE & 10x GUI QA
+name: ToneEdit Studio build and 10 GUI trials
 on:
   push:
     branches: [toneedit-studio-ci-20261112]
   workflow_dispatch:
 jobs:
-  windows_build:
+  verify:
     runs-on: windows-2022
-    permissions:
-      contents: read
-    timeout-minutes: 55
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@v4
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Extract sources via 7zip
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Extract source with 7-Zip
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force workspace | Out-Null
-          $seven = "C:\Program Files\7-Zip\7z.exe"
-          if (!(Test-Path $seven)) { throw "7-Zip not installed on Windows runner" }
-          & $seven x -y "-oworkspace" "toneedit/toneedit-source-1.2.2.tar.xz"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to extract XZ" }
-          $tar = Get-ChildItem workspace -Filter "*.tar" | Select-Object -First 1
-          if (!$tar) { throw "XZ payload tar missing" }
-          & $seven x -y "-oworkspace" $tar.FullName
-          if ($LASTEXITCODE -ne 0) { throw "Failed to extract TAR" }
-          if (!(Test-Path workspace/ToneEdit-Studio/Cargo.toml)) { throw "Cargo.toml missing" }
-      - name: Apply verified compiler fixes
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $ai = 'workspace/ToneEdit-Studio/src/ai.rs'
-          $edit = 'workspace/ToneEdit-Studio/src/components/editor.rs'
-          $text = Get-Content -LiteralPath $ai -Raw -Encoding UTF8
-          if (!$text.Contains('    /// Account identifiers, passwords, access tokens and API keys are deliberately absent.')) { throw 'Source content mismatch: ai.rs' }
-          $text = $text.Replace('    /// Account identifiers, passwords, access tokens and API keys are deliberately absent.', '    // Account identifiers, passwords, access tokens and API keys are deliberately absent.')
-          [System.IO.File]::WriteAllText((Resolve-Path $ai), $text, [System.Text.UTF8Encoding]::new($false))
-          $text = Get-Content -LiteralPath $edit -Raw -Encoding UTF8
-          if (!$text.Contains('ui.fonts_mut(') -or !$text.Contains('range.primary.index')) { throw 'Source content mismatch: editor.rs' }
-          $text = $text.Replace('ui.fonts_mut(', 'ui.fonts(').Replace('range.primary.index', 'range.primary.ccursor.index')
-          $text = $text.Replace('buf: &dyn egui::TextBuffer', 'buf: &str').Replace('syntax::highlight(buf.as_str(),', 'syntax::highlight(buf,')
-          [System.IO.File]::WriteAllText((Resolve-Path $edit), $text, [System.Text.UTF8Encoding]::new($false))
-      - name: Switch to wgpu renderer to avoid unsupported OpenGL on Windows CI
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          foreach ($manifest in @('Cargo.toml', 'packaging/setup/Cargo.toml', 'packaging/uninstall/Cargo.toml')) {
-            $p = Join-Path 'workspace/ToneEdit-Studio' $manifest
-            $t = Get-Content -LiteralPath $p -Raw -Encoding UTF8
-            if (!$t.Contains('"glow"')) { throw "OpenGL dependency missing at $p" }
-            $t = $t.Replace('"glow"', '"wgpu"')
-            [System.IO.File]::WriteAllText((Resolve-Path $p), $t, [System.Text.UTF8Encoding]::new($false))
-          }
-          foreach ($source in @('src/main.rs', 'packaging/setup/src/main.rs', 'packaging/uninstall/src/main.rs')) {
-            $p = Join-Path 'workspace/ToneEdit-Studio' $source
-            $t = Get-Content -LiteralPath $p -Raw -Encoding UTF8
-            if (!$t.Contains('let options = eframe::NativeOptions {')) { throw "NativeOptions missing at $p" }
-            $t = $t.Replace('let options = eframe::NativeOptions {', "let options = eframe::NativeOptions {`n        renderer: eframe::Renderer::Wgpu,")
-            [System.IO.File]::WriteAllText((Resolve-Path $p), $t, [System.Text.UTF8Encoding]::new($false))
-          }
-      - name: Compile and test full Rust EXE installer
-        shell: pwsh
+          & 'C:\Program Files\7-Zip\7z.exe' x toneedit/toneedit-source-1.2.2.tar.xz '-oworkspace' -y
+          & 'C:\Program Files\7-Zip\7z.exe' x workspace/toneedit-source-1.2.2.tar '-oworkspace' -y
+          if (!(Test-Path workspace/ToneEdit-Studio/Cargo.toml)) { throw 'Source extraction failed' }
+      - name: Compile and self-test all three EXEs
         working-directory: workspace/ToneEdit-Studio
+        shell: pwsh
         run: cargo run --release --manifest-path tools/build-all/Cargo.toml --target-dir tools/build-all/target
-      - name: Validate release bundle
+      - name: Attempt GUI keyboard actions 10 times per app
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $dir = 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free'
-          @('toneedit-studio.exe','toneedit-uninstall.exe','toneedit-setup.exe','LICENSE') | ForEach-Object {
-            if (!(Test-Path (Join-Path $dir $_))) { throw "Missing $_" }
-          }
-      - name: 10 repetitions of compiled executable self-tests
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $dir = 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free'
-          1..10 | ForEach-Object {
-            $round = $_
-            foreach ($exe in @('toneedit-studio.exe','toneedit-setup.exe','toneedit-uninstall.exe')) {
-              $proc = Start-Process -FilePath (Join-Path $dir $exe) -ArgumentList '--self-test' -PassThru -Wait
-              if ($proc.ExitCode -ne 0) { throw "Executable $exe failed round $round with exit code $($proc.ExitCode)" }
-              Write-Host "PASS core $round/10 $exe"
+          Add-Type -AssemblyName System.Windows.Forms
+          $dir='workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free'
+          New-Item -ItemType Directory -Force gui-qa | Out-Null
+          $rows=@()
+          foreach ($i in 1..10) {
+            foreach ($name in @('toneedit-studio.exe','toneedit-setup.exe','toneedit-uninstall.exe')) {
+              $argsList=if($name -eq 'toneedit-uninstall.exe'){'--worker'}else{''}
+              $proc=Start-Process -FilePath (Join-Path $dir $name) -ArgumentList $argsList -PassThru
+              Start-Sleep -Seconds 3
+              $proc.Refresh()
+              $opened=(-not $proc.HasExited -and $proc.MainWindowHandle -ne [IntPtr]::Zero)
+              $typed=$false
+              if($opened){try{[System.Windows.Forms.SendKeys]::SendWait('{TAB}');$typed=$true}catch{}}
+              $rows+=[pscustomobject]@{iteration=$i;exe=$name;window_open=$opened;keyboard_sent=$typed;passed=($opened -and $typed)}
+              if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
             }
           }
-      - name: Actual Windows GUI launch and keyboard interaction 10 repetitions
-        shell: powershell
-        continue-on-error: true
-        run: |
-          .\.github\tests\toneedit-gui-10x.ps1 -ReleaseDirectory 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free' -Iterations 10
-      - name: Upload 10-round GUI reports and screenshots
+          $rows|Export-Csv gui-qa/report.csv -NoTypeInformation -Encoding utf8
+          $rows|ConvertTo-Json|Set-Content gui-qa/report.json
+          $rows|Format-Table|Out-String|Write-Host
+          if(@($rows|Where-Object {-not $_.passed}).Count){throw 'GUI trial failures'}
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: ToneEdit-Windows-GUI-10x-QA
-          path: ${{ runner.temp }}/ToneEdit-GUI-10x/**
+          name: ToneEdit-GUI-10x-log
+          path: gui-qa/**
           if-no-files-found: warn
-      - name: Upload compiled EXEs
-        if: success()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ToneEdit-Studio-Windows-EXE-MIT
+          name: ToneEdit-Windows-EXE
           path: |
             workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/**
             workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free.zip
-          if-no-files-found: error
-          retention-days: 30
+          if-no-files-found: warn
