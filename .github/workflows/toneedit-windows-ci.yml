@@ -1,0 +1,50 @@
+name: ToneEdit Studio Windows Rust EXE build
+on:
+  push:
+    branches: [toneedit-studio-ci-20261112]
+  pull_request:
+    paths: [toneedit/**, .github/workflows/toneedit-windows-ci.yml]
+  workflow_dispatch:
+jobs:
+  windows_build:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Extract ToneEdit sources
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force workspace | Out-Null
+          tar -xf toneedit/toneedit-source-1.2.2.tar.xz -C workspace
+          if (-not (Test-Path workspace/ToneEdit-Studio/Cargo.toml)) { throw "Missing source Cargo.toml" }
+          Get-ChildItem workspace/ToneEdit-Studio
+      - name: Compile and test Rust all-in-one EXE installer
+        shell: pwsh
+        working-directory: workspace/ToneEdit-Studio
+        run: cargo run --release --manifest-path tools/build-all/Cargo.toml --target-dir tools/build-all/target
+      - name: Validate output binaries and MIT license
+        shell: pwsh
+        run: |
+          $dir = 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free'
+          @('toneedit-studio.exe','toneedit-uninstall.exe','toneedit-setup.exe','LICENSE') | ForEach-Object {
+            if (-not (Test-Path (Join-Path $dir $_))) { throw "Missing $_" }
+          }
+          @('toneedit-studio.exe','toneedit-uninstall.exe','toneedit-setup.exe') | ForEach-Object {
+            $p = Join-Path $dir $_
+            & $p --self-test
+            if ($LASTEXITCODE -ne 0) { throw "Self-test failure: $p" }
+          }
+      - name: Upload EXE release files
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToneEdit-Studio-Windows-EXE-MIT
+          path: |
+            workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/**
+            workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free.zip
+          if-no-files-found: error
+          retention-days: 30
