@@ -27,6 +27,20 @@ jobs:
           & $seven x -y "-oworkspace" $tar.FullName
           if ($LASTEXITCODE -ne 0) { throw "Failed to extract TAR" }
           if (!(Test-Path workspace/ToneEdit-Studio/Cargo.toml)) { throw "Cargo.toml missing" }
+      - name: Apply verified compiler fixes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ai = 'workspace/ToneEdit-Studio/src/ai.rs'
+          $edit = 'workspace/ToneEdit-Studio/src/components/editor.rs'
+          $text = Get-Content -LiteralPath $ai -Raw -Encoding UTF8
+          if (!$text.Contains('    /// Account identifiers, passwords, access tokens and API keys are deliberately absent.')) { throw 'Source content mismatch: ai.rs' }
+          $text = $text.Replace('    /// Account identifiers, passwords, access tokens and API keys are deliberately absent.', '    // Account identifiers, passwords, access tokens and API keys are deliberately absent.')
+          [System.IO.File]::WriteAllText((Resolve-Path $ai), $text, [System.Text.UTF8Encoding]::new($false))
+          $text = Get-Content -LiteralPath $edit -Raw -Encoding UTF8
+          if (!$text.Contains('ui.fonts_mut(') -or !$text.Contains('range.primary.index')) { throw 'Source content mismatch: editor.rs' }
+          $text = $text.Replace('ui.fonts_mut(', 'ui.fonts(').Replace('range.primary.index', 'range.primary.ccursor.index')
+          [System.IO.File]::WriteAllText((Resolve-Path $edit), $text, [System.Text.UTF8Encoding]::new($false))
       - name: Compile and test full Rust EXE installer
         shell: pwsh
         working-directory: workspace/ToneEdit-Studio
