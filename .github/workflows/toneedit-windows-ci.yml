@@ -17,6 +17,18 @@ jobs:
           & 'C:\Program Files\7-Zip\7z.exe' x toneedit/toneedit-source-1.2.2.tar.xz '-oworkspace' -y
           & 'C:\Program Files\7-Zip\7z.exe' x workspace/toneedit-source-1.2.2.tar '-oworkspace' -y
           if (!(Test-Path workspace/ToneEdit-Studio/Cargo.toml)) { throw 'Source extraction failed' }
+      - name: Apply verified Rust compiler fixes
+        shell: pwsh
+        run: |
+          $ai='workspace/ToneEdit-Studio/src/ai.rs'
+          $editor='workspace/ToneEdit-Studio/src/components/editor.rs'
+          $t=Get-Content $ai -Raw -Encoding utf8
+          $t=$t.Replace('    /// Account identifiers, passwords, access tokens and API keys are deliberately absent.', '    // Account identifiers, passwords, access tokens and API keys are deliberately absent.')
+          [IO.File]::WriteAllText((Resolve-Path $ai),$t,[Text.UTF8Encoding]::new($false))
+          $t=Get-Content $editor -Raw -Encoding utf8
+          $t=$t.Replace('ui.fonts_mut(','ui.fonts(').Replace('range.primary.index','range.primary.ccursor.index')
+          $t=$t.Replace('buf: &dyn egui::TextBuffer','buf: &str').Replace('syntax::highlight(buf.as_str(),','syntax::highlight(buf,')
+          [IO.File]::WriteAllText((Resolve-Path $editor),$t,[Text.UTF8Encoding]::new($false))
       - name: Compile and self-test all three EXEs
         working-directory: workspace/ToneEdit-Studio
         shell: pwsh
@@ -27,6 +39,7 @@ jobs:
           Add-Type -AssemblyName System.Windows.Forms
           $dir='workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free'
           New-Item -ItemType Directory -Force gui-qa | Out-Null
+          $env:WGPU_BACKEND='dx12'
           $rows=@()
           foreach ($i in 1..10) {
             foreach ($name in @('toneedit-studio.exe','toneedit-setup.exe','toneedit-uninstall.exe')) {
