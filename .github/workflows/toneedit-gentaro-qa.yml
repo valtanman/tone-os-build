@@ -1,0 +1,102 @@
+name: ToneEdit Studio Gentaro native Windows build and 10x QA
+on:
+  push:
+    branches: [toneedit-gentaro-qa-20261112]
+  workflow_dispatch:
+jobs:
+  gentaro_windows:
+    runs-on: windows-2022
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Extract original source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $seven='C:\Program Files\7-Zip\7z.exe'
+          New-Item -ItemType Directory -Force workspace | Out-Null
+          & $seven x -y "-oworkspace" "toneedit/toneedit-source-1.2.2.tar.xz"
+          if ($LASTEXITCODE -ne 0) { throw 'XZ extraction failed' }
+          $tar=Get-ChildItem workspace -Filter '*.tar' | Select-Object -First 1
+          if (!$tar) { throw 'No intermediate tar' }
+          & $seven x -y "-oworkspace" $tar.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'TAR extraction failed' }
+          if (!(Test-Path 'workspace/ToneEdit-Studio/Cargo.toml')) { throw 'Cargo.toml missing' }
+      - name: Apply Gentaro migration with Git patch validation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git apply --check --directory=workspace/ToneEdit-Studio toneedit/gentaro-migration.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Gentaro patch validation failed' }
+          git apply --directory=workspace/ToneEdit-Studio toneedit/gentaro-migration.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Gentaro patch application failed' }
+          Get-Content workspace/ToneEdit-Studio/gentaro/ToneEdit_規則.tone -TotalCount 7
+          if (!(Test-Path workspace/ToneEdit-Studio/src/gentaro.rs)) { throw 'Gentaro interpreter missing' }
+      - name: Cargo unit tests including executable Gentaro policies
+        shell: pwsh
+        working-directory: workspace/ToneEdit-Studio
+        run: cargo test --locked
+      - name: Repeated headless editing and Gentaro logic tests (10 rounds)
+        shell: pwsh
+        working-directory: workspace/ToneEdit-Studio
+        run: |
+          $ErrorActionPreference = 'Stop'
+          1..10 | ForEach-Object {
+            cargo test --locked gentaro::tests
+            if ($LASTEXITCODE -ne 0) { throw "Gentaro test failed round $_" }
+            cargo test --locked component_state_tests::workbench_renders_in_headless_egui_context
+            if ($LASTEXITCODE -ne 0) { throw "Headless GUI test failed round $_" }
+            Write-Host "Gentaro and headless GUI: passed round $_/10"
+          }
+      - name: Build native single-EXE installer, editor, and uninstaller
+        shell: pwsh
+        working-directory: workspace/ToneEdit-Studio
+        run: cargo run --release --manifest-path tools/build-all/Cargo.toml --target-dir tools/build-all/target
+      - name: Verify all three EXEs with 10 runs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir='workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free'
+          New-Item -ItemType Directory -Force gentaro-qa | Out-Null
+          $rows=@()
+          foreach ($round in 1..10) {
+            foreach ($exe in @('toneedit-studio.exe','toneedit-setup.exe','toneedit-uninstall.exe')) {
+              $p=Join-Path $dir $exe
+              if (!(Test-Path $p)) { throw "Missing $p" }
+              $proc=Start-Process -FilePath $p -ArgumentList '--self-test' -PassThru -Wait
+              $pass=$proc.ExitCode -eq 0
+              $rows+=[pscustomobject]@{Round=$round;Exe=$exe;SelfTest=$pass;Exit=$proc.ExitCode}
+              if (!$pass) { throw "Round $round failed: $exe" }
+            }
+          }
+          $rows | Export-Csv gentaro-qa/self-tests-10x.csv -NoTypeInformation -Encoding UTF8
+          Copy-Item 'workspace/ToneEdit-Studio/gentaro' 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/gentaro' -Recurse
+          Copy-Item 'workspace/ToneEdit-Studio/言太郎_移植状況.md' 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/'
+      - name: Actual Windows GUI launch and keyboard interactions (10 rounds)
+        shell: powershell
+        continue-on-error: true
+        run: |
+          .\.github\tests\toneedit-gui-10x.ps1 -ReleaseDirectory 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free' -Iterations 10
+      - name: Publish Gentaro QA results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToneEdit-Gentaro-QA-10x
+          path: |
+            gentaro-qa/**
+            ${{ runner.temp }}/ToneEdit-GUI-10x/**
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish compiled native Windows binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToneEdit-Gentaro-EXE-MIT
+          path: |
+            workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/**
+          if-no-files-found: warn
+          retention-days: 30

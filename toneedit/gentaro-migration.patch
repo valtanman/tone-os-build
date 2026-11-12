@@ -1,0 +1,1018 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 4844c74..e2b6969 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -7,7 +7,7 @@ authors = ["ToneEdit Studio contributors"]
+ description = "Rust-native, multi-document text and source editor"
+ 
+ [dependencies]
+-eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
++eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+ rfd = "=0.15.3"
+ encoding_rs = "=0.8.35"
+ regex = "=1.11.1"
+diff --git a/gentaro/README.md b/gentaro/README.md
+new file mode 100644
+index 0000000..0cc5961
+--- /dev/null
++++ b/gentaro/README.md
+@@ -0,0 +1,65 @@
++# ToneEdit Studio — 言太郎（ToneGentaro.）移行版
++
++**使用言語:** 言太郎（`.tone`）優先、言太郎の未対応機能のみRust（ネイティブGUI・OS API・通信・ファイルI/O）。Python、JavaScript、HTML製GUIは一切使用しません。**配布方針:** 完全無料・MIT・Windows x64。
++
++## 言太郎で実際に記述した部分
++
++- `ToneEdit_起動.tone`: 製品名・MIT・無料版表示・起動メッセージ
++- `ToneEdit_規則.tone`: 文書名、保存拒否判定、空文字検索、AI会話の事業者隔離、APIキー要否、APIプロトコル分類、送信条件、未保存表示、インストール先の安全判定、アンインストールの安全条件
++
++これらの一部を `src/gentaro.rs`（Rust製のネイティブ言太郎サブセット実行器）で呼び出し、既存アプリの機能に組み込んでいます。`.tone` はコンパイル時にRust本体へ埋め込まれます。外部ダウンロードした未検証スクリプトは実行しません。
++
++### 使用している言太郎構文
++
++```text
++関数 保存を拒否する(存在する, 時刻一致, 内容一致):
++    もし 存在する == 偽 なら:
++        真 を返す
++    終わり
++    もし 時刻一致 == 偽 なら:
++        真 を返す
++    終わり
++    もし 内容一致 == 偽 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++```
++
++これは公知の言太郎試作構文に沿った書き方です。現在のアプリ内Rustブリッジが認識するのは、`関数`、`変数`、`もし`、`そうでなければ`、`終わり`、`を返す`、`を表示`、文字列（`「」`）、整数、真偽、基本演算子の限定サブセットです。**言太郎本体の正式コンパイラとの完全互換性を保証するものではありません。**
++
++### Rustで引き続き必要な部分
++
++1. `src/document.rs`: UTF-8/UTF-16/Shift-JIS変換、原子的保存、バックアップ
++2. `src/components/*.rs`: 独立コンポーネント式GUI、日本語IME、ショートカット
++3. `src/ai/providers/*.rs`: HTTP API、HTTPS、JSON、レスポンス解析
++4. `src/google_oauth.rs`: OAuth/PKCE、認証情報をOSで保護する仕組み
++5. `packaging/setup`, `packaging/uninstall`: Windowsレジストリ、ショートカット、インストールと削除
++
++これらのRust代替に必要な言太郎機能を `feedback/言太郎_機能追加要求.md` に記録しています。
++
++## 既存アプリへの接続箇所
++
++| 言太郎関数 | 呼出元（Rust側） |
++|---|---|
++| 製品名 | `src/main.rs` GUIタイトル |
++| 文書名を作る | `src/main.rs` 未保存タブの表示 |
++| 保存を拒否する | `src/main.rs` 保存競合・外部変更の判定 |
++| 検索を省略する | `src/search.rs` 検索処理の先頭 |
++| 会話を分離する | `src/ai.rs` APIベンダー変更時の新規会話 |
++| AI鍵が必要 | `src/ai.rs` OSのAPI資格情報取得判断 |
++| API形式を選ぶ | `src/ai/providers/mod.rs` 3系統のアダプター選択 |
++| 送信を拒否する | `src/ai.rs` 空メッセージ、送信中、サイズ制限 |
++| 入力済みの表示 | `src/components/status.rs` ステータスバーの未保存表示 |
++| インストール先を拒否する | `packaging/setup/src/main.rs` パス審査 |
++| 削除を許可する | `packaging/uninstall/src/main.rs` 所有者印と設置先の二重確認 |
++
++安全のため外部変更の検出、ファイル破壊回避、AI送信先隔離とインストール先保護は、Rust側にもフェイルセーフのチェックを残しています。言太郎での誤判定やランタイムの解析失敗で危険な操作が許可されないようにするためです。
++
++## 検証状況
++
++- **今回行ったこと:** 既存の1.2.2作業ソースから再構成し、`.tone` 業務規則、Rustネイティブ実行器、UI/AI/保存/セットアップへの呼出し、Rust単体テストコードを追加。
++- **今回まだ行っていないこと:** 言太郎本体でのコンパイル、Rust/Windows EXE一括ビルド、GUI操作の10回再検証、インストール・アンインストール試験。今回の依頼は「言太郎で書き直す」ため、明示的な次のビルド指示は受けていません。
++- **既知の問題:** これまでのWindows仮想試験でGUI起動が30試行とも不合格であり、言太郎へルールを移植しただけでは解消したとはいえません。
++
++**これは移行途中のソースコード版です。完成EXEや全機能の言太郎移植と誤認しないでください。**
+diff --git "a/gentaro/ToneEdit_\350\246\217\345\211\207.tone" "b/gentaro/ToneEdit_\350\246\217\345\211\207.tone"
+new file mode 100644
+index 0000000..a3fd506
+--- /dev/null
++++ "b/gentaro/ToneEdit_\350\246\217\345\211\207.tone"
+@@ -0,0 +1,105 @@
++# ToneEdit Studio - 言太郎の業務規則
++# MIT / UTF-8
++# このファイルは宣言済みの基本構文（関数・変数・もし・終わり・を返す）を使用する。
++# ネイティブ描画・ファイルI/O・ネットワーク処理はRust側の橋渡しが担当する。
++
++関数 文書名を作る(名前, 変更あり):
++    もし 変更あり == 真 なら:
++        名前 + 「 ●」 を返す
++    そうでなければ:
++        名前 を返す
++    終わり
++終わり
++
++関数 保存を拒否する(存在する, 時刻一致, 内容一致):
++    もし 存在する == 偽 なら:
++        真 を返す
++    終わり
++    もし 時刻一致 == 偽 なら:
++        真 を返す
++    終わり
++    もし 内容一致 == 偽 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 検索を省略する(検索語):
++    もし 検索語 == 「」 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 会話を分離する(既存の会話あり, 事業者変更あり, 接続先変更あり):
++    もし 既存の会話あり == 真 なら:
++        もし 事業者変更あり == 真 なら:
++            真 を返す
++        終わり
++        もし 接続先変更あり == 真 なら:
++            真 を返す
++        終わり
++    終わり
++    偽 を返す
++終わり
++
++関数 AI鍵が必要(事業者識別子):
++    もし 事業者識別子 == 「ollama」 なら:
++        偽 を返す
++    終わり
++    真 を返す
++終わり
++
++関数 API形式を選ぶ(事業者識別子):
++    もし 事業者識別子 == 「anthropic」 なら:
++        「anthropic」 を返す
++    終わり
++    もし 事業者識別子 == 「gemini」 なら:
++        「gemini」 を返す
++    終わり
++    「openai互換」 を返す
++終わり
++
++関数 送信を拒否する(送信中, 内容なし, 上限超過):
++    もし 送信中 == 真 なら:
++        真 を返す
++    終わり
++    もし 内容なし == 真 なら:
++        真 を返す
++    終わり
++    もし 上限超過 == 真 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 入力済みの表示(編集済み):
++    もし 編集済み == 真 なら:
++        「未保存」 を返す
++    そうでなければ:
++        「保存済み」 を返す
++    終わり
++終わり
++
++関数 インストール先を拒否する(絶対パスでない, 親参照あり, 危険な階層):
++    もし 絶対パスでない == 真 なら:
++        真 を返す
++    終わり
++    もし 親参照あり == 真 なら:
++        真 を返す
++    終わり
++    もし 危険な階層 == 真 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 削除を許可する(所有者印が正しい, 対象が正しい):
++    もし 所有者印が正しい == 偽 なら:
++        偽 を返す
++    終わり
++    もし 対象が正しい == 偽 なら:
++        偽 を返す
++    終わり
++    真 を返す
++終わり
+diff --git "a/gentaro/ToneEdit_\350\265\267\345\213\225.tone" "b/gentaro/ToneEdit_\350\265\267\345\213\225.tone"
+new file mode 100644
+index 0000000..fc4c8e2
+--- /dev/null
++++ "b/gentaro/ToneEdit_\350\265\267\345\213\225.tone"
+@@ -0,0 +1,18 @@
++# ToneEdit Studio の言太郎側エントリーポイント（設計・動作確認用）
++# ネイティブウィンドウはRust側で生成する。JavaScript/HTMLは使用しない。
++関数 製品名():
++    「ToneEdit Studio」 を返す
++終わり
++
++関数 ライセンス():
++    「MIT」 を返す
++終わり
++
++関数 課金方式():
++    「完全無料」 を返す
++終わり
++
++関数 起動案内():
++    「ToneEdit Studio」 を表示
++    「日本語プログラミング言語・言太郎による編集規則を有効化」 を表示
++終わり
+diff --git "a/gentaro/feedback/\350\250\200\345\244\252\351\203\216_\346\251\237\350\203\275\350\277\275\345\212\240\350\246\201\346\261\202.md" "b/gentaro/feedback/\350\250\200\345\244\252\351\203\216_\346\251\237\350\203\275\350\277\275\345\212\240\350\246\201\346\261\202.md"
+new file mode 100644
+index 0000000..f57097a
+--- /dev/null
++++ "b/gentaro/feedback/\350\250\200\345\244\252\351\203\216_\346\251\237\350\203\275\350\277\275\345\212\240\350\246\201\346\261\202.md"
+@@ -0,0 +1,17 @@
++# 言太郎（ToneGentaro.）へ反映する実装要件
++
++既存の確認可能な言太郎 v0.1.1 は `変数`、`関数`、`もし`、`そうでなければ`、`終わり`、`を返す`、`を表示`、反復などの基本構文と `.tone` を採用します。一方、既存の試作コンパイラはJavaScript/TypeScript出力が中心でした。本製品は **Python/HTMLを使用せず、Windows x64のネイティブGUI** が必須です。
++
++| 欠けている言太郎の仕組み | 追加する構文または標準ライブラリ | Rust代替の現状 | 受け入れテスト |
++|---|---|---|---|
++| ネイティブウィンドウ描画 | ウィンドウ・パネル・テキスト領域・イベント・IME・アクセシビリティ | `eframe/egui` のRust実装 | 日本語入力・保存ダイアログ・リサイズを10回 |
++| ファイル安全保存 | バイナリI/O・原子的置換・同期・バックアップ・署名/ハッシュ | `src/document.rs` | BOM、改行、外部変更、未保存復旧 |
++| 正規表現・Unicode | 正規表現コンパイル、UTF-8文字境界と範囲 | `src/search.rs` | 全角文字を含む検索・置換・Regex |
++| HTTP APIとTLS | HTTPS・ヘッダ・JSON・タイムアウト・送信許可 | `src/ai/providers/*.rs` | 送信先変更時の履歴隔離、認証情報非流出 |
++| OSの資格情報保管 | Windows Credential Manager、鍵の読込/削除 | `keyring` | APIキーが設定・履歴ファイルに残らない |
++| OAuth 2.0 / PKCE | URL構築・ループバック待受・state・PKCE検証 | `src/google_oauth.rs` | 不正state・期限切れ・拒否処理 |
++| Windowsインストール | 実行ファイル内包、`.lnk`、レジストリ、アンインストール | `packaging/` | スタートメニュー登録・安全な削除 |
++| モジュール/型/例外/非同期 | 名前空間、構造体、配列、辞書、非同期実行、例外、結果型 | Rustコンポーネント | 言太郎で同等機能の回帰試験通過 |
++| ネイティブ出力 | Windows x64 EXE（JavaScript/HTML不要） | Rust MSVC | Windows実機で起動確認 |
++
++移行方針：言太郎で表現可能な規則・分岐を `.tone` に置き、未実装のOS機能だけRustから提供する。API追加後は順次 `.tone` に移管する。既存GUIが正常に動くまで、ソースの置換を理由に製品を完成扱いしない。
+diff --git a/packaging/setup/Cargo.toml b/packaging/setup/Cargo.toml
+index a3a3329..41cb636 100644
+--- a/packaging/setup/Cargo.toml
++++ b/packaging/setup/Cargo.toml
+@@ -6,7 +6,7 @@ build = "build.rs"
+ license = "MIT"
+ 
+ [dependencies]
+-eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "glow"] }
++eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu"] }
+ mslnk = "=0.1.8"
+ winreg = "=0.56.0"
+ image = { version = "=0.25.6", default-features = false, features = ["png"] }
+diff --git a/packaging/setup/src/main.rs b/packaging/setup/src/main.rs
+index 167e940..1934292 100644
+--- a/packaging/setup/src/main.rs
++++ b/packaging/setup/src/main.rs
+@@ -9,6 +9,9 @@ use std::thread;
+ use winreg::enums::HKEY_CURRENT_USER;
+ use winreg::RegKey;
+ 
++#[path = "../../../src/gentaro.rs"]
++mod gentaro;
++
+ const APP_EXE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/release/toneedit-studio.exe"));
+ const UNINSTALL_EXE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/release/toneedit-uninstall.exe"));
+ const APP_ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/ToneEdit.ico"));
+@@ -55,6 +58,7 @@ fn main() -> eframe::Result<()> {
+         .expect("Embedded installer artwork is invalid").to_rgba8();
+     let icon = egui::IconData { width: decoded.width(), height: decoded.height(), rgba: decoded.into_raw() };
+     let options = eframe::NativeOptions {
++        renderer: eframe::Renderer::Wgpu,
+         viewport: egui::ViewportBuilder::default().with_title("ToneEdit Studio | Installer")
+             .with_inner_size([820.0, 560.0]).with_min_inner_size([740.0, 500.0])
+             .with_icon(icon),
+@@ -86,13 +90,21 @@ fn desktop_link() -> Option<PathBuf> {
+ 
+ fn checked_install_path(raw: &str) -> Result<PathBuf, String> {
+     let path = PathBuf::from(raw.trim());
+-    if !path.is_absolute() { return Err("Choose an absolute installation path".into()); }
+-    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
++    let relative = !path.is_absolute();
++    let has_parent_reference = path.components().any(|c| matches!(c, std::path::Component::ParentDir));
++    let unsafe_depth = path.parent().is_none() || path.components().count() < 3;
++    // 日本語の判定規則を実行。失敗時は拒否。Rust側でも安全条件を重ねて検査する。
++    let blocked = gentaro::installer_path_denied(relative, has_parent_reference, unsafe_depth).unwrap_or(true);
++    if relative { return Err("Choose an absolute installation path".into()); }
++    if has_parent_reference {
+         return Err("Parent directory segments are not allowed in the install path".into());
+     }
+-    if path.parent().is_none() || path.components().count() < 3 {
++    if unsafe_depth {
+         return Err("Refusing to install to the drive root or an unsafe directory".into());
+     }
++    if blocked {
++        return Err("Gentaro policy refused the installation target".into());
++    }
+     Ok(path)
+ }
+ /// The installer must not overwrite a README, EXE or license belonging to
+diff --git a/packaging/uninstall/Cargo.toml b/packaging/uninstall/Cargo.toml
+index afafb89..09a2f9e 100644
+--- a/packaging/uninstall/Cargo.toml
++++ b/packaging/uninstall/Cargo.toml
+@@ -6,7 +6,7 @@ build = "build.rs"
+ license = "MIT"
+ 
+ [dependencies]
+-eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "glow"] }
++eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu"] }
+ winreg = "=0.56.0"
+ keyring = "=3.6.2"
+ 
+diff --git a/packaging/uninstall/src/main.rs b/packaging/uninstall/src/main.rs
+index 4d13fb1..d46c047 100644
+--- a/packaging/uninstall/src/main.rs
++++ b/packaging/uninstall/src/main.rs
+@@ -8,6 +8,9 @@ use std::thread;
+ use winreg::enums::HKEY_CURRENT_USER;
+ use winreg::RegKey;
+ 
++#[path = "../../../src/gentaro.rs"]
++mod gentaro;
++
+ const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ToneEditStudio";
+ const PRODUCT_MARKER: &str = "ToneEdit Studio 1.2.1";
+ 
+@@ -25,6 +28,7 @@ fn main() -> eframe::Result<()> {
+         } else { return Ok(()); }
+     }
+     let options = eframe::NativeOptions {
++        renderer: eframe::Renderer::Wgpu,
+         viewport: egui::ViewportBuilder::default().with_title("ToneEdit Studio | Uninstall")
+             .with_inner_size([650., 360.]),
+         ..Default::default()
+@@ -72,9 +76,14 @@ fn uninstall(remove_settings: bool) -> Result<String, String> {
+     let marker = folder.join("toneedit-install.marker");
+     let content = fs::read_to_string(&marker)
+         .map_err(|_| "ToneEdit product marker missing; refusing to delete unknown folder".to_owned())?;
+-    if content.trim() != PRODUCT_MARKER && content.trim() != "ToneEdit Studio 1.2.0" {
++    let marker_valid = content.trim() == PRODUCT_MARKER || content.trim() == "ToneEdit Studio 1.2.0";
++    if !marker_valid {
+         return Err("Product marker did not match; uninstall was aborted".into());
+     }
++    if !gentaro::uninstallation_allowed(marker_valid, folder.is_absolute() && folder.components().count() >= 3)
++        .unwrap_or(false) {
++        return Err("Gentaro safety policy blocked this uninstall".into());
++    }
+     // Remove only known filenames. Never recursively erase a user-selected folder.
+     for name in ["toneedit-studio.exe", "toneedit-uninstall.exe", "ToneEdit.ico",
+         "ToneEdit-Setup.ico", "ToneEdit-Uninstall.ico", "README.md", "COMPONENTS.md", "QA_REPORT.md", "LICENSE", "toneedit-install.marker"] {
+diff --git a/src/ai.rs b/src/ai.rs
+index 84512ae..03ea576 100644
+--- a/src/ai.rs
++++ b/src/ai.rs
+@@ -64,7 +64,9 @@ impl Vendor {
+             Self::Custom => "https://example.invalid/v1/chat/completions",
+         }
+     }
+-    pub fn requires_key(self) -> bool { !matches!(self, Self::Ollama) }
++    pub fn requires_key(self) -> bool {
++        crate::gentaro::api_key_required(self.id()).unwrap_or(!matches!(self, Self::Ollama))
++    }
+ }
+ 
+ #[derive(Clone, Debug, Serialize, Deserialize)]
+@@ -90,7 +92,7 @@ struct ChatFile {
+     conversations: Vec<Conversation>,
+     current: u64,
+     next_id: u64,
+-    /// Account identifiers, passwords, access tokens and API keys are deliberately absent.
++    // Account identifiers, passwords, access tokens and API keys are deliberately absent.
+ }
+ impl Default for ChatFile {
+     fn default() -> Self { Self {
+@@ -161,8 +163,14 @@ impl AiWorkspace {
+         credential_entry(self.data.vendor).and_then(|e| e.get_password().map_err(|e| format!("Credential not available: {e}")))
+     }
+     fn send(&mut self) {
+-        if self.pending.is_some() || self.prompt.trim().is_empty() { return; }
+-        if self.prompt.len() > MAX_MESSAGE_BYTES { self.status = "Prompt exceeds 64 KiB limit".into(); return; }
++        let in_flight = self.pending.is_some();
++        let empty = self.prompt.trim().is_empty();
++        let too_large = self.prompt.len() > MAX_MESSAGE_BYTES;
++        if crate::gentaro::reject_ai_send(in_flight, empty, too_large)
++            .unwrap_or(in_flight || empty || too_large) {
++            if !in_flight && !empty && too_large { self.status = "Prompt exceeds 64 KiB limit".into(); }
++            return;
++        }
+         let key = match self.provider_secret() {
+             Ok(k) => k,
+             Err(e) => { self.status = format!("Set an API key in AI > Connections. {e}"); self.settings_open = true; return; }
+@@ -179,8 +187,13 @@ impl AiWorkspace {
+         }
+         // A provider change is a new conversation. Never silently send a previous
+         // provider's chat history to a different vendor.
+-        if self.active_chat().is_some_and(|c| !c.messages.is_empty() &&
+-            (c.provider != vendor || (vendor == Vendor::Custom && c.endpoint.as_deref() != Some(endpoint.as_str())))) {
++        if self.active_chat().is_some_and(|c| {
++            let has_history = !c.messages.is_empty();
++            let provider_changed = c.provider != vendor;
++            let endpoint_changed = vendor == Vendor::Custom && c.endpoint.as_deref() != Some(endpoint.as_str());
++            crate::gentaro::split_conversation(has_history, provider_changed, endpoint_changed)
++                .unwrap_or(has_history && (provider_changed || endpoint_changed))
++        }) {
+             self.create_chat();
+             self.status = "Destination changed: started a separate conversation to protect history.".into();
+         }
+diff --git a/src/ai/providers/mod.rs b/src/ai/providers/mod.rs
+index d737fda..9f8cb1f 100644
+--- a/src/ai/providers/mod.rs
++++ b/src/ai/providers/mod.rs
+@@ -23,10 +23,15 @@ static ANTHROPIC: anthropic::Anthropic = anthropic::Anthropic;
+ static GEMINI: gemini::Gemini = gemini::Gemini;
+ 
+ pub fn adapter(vendor: Vendor) -> &'static dyn AiProviderAdapter {
+-    match vendor {
+-        Vendor::Anthropic => &ANTHROPIC,
+-        Vendor::Gemini => &GEMINI,
+-        _ => &OPENAI,
++    // APIのプロトコル選択は言太郎ソースで定義する。異常時には元の安全な分類へ戻す。
++    match crate::gentaro::provider_protocol(vendor.id()) {
++        Ok(protocol) if protocol == "anthropic" => &ANTHROPIC,
++        Ok(protocol) if protocol == "gemini" => &GEMINI,
++        Ok(_) | Err(_) => match vendor {
++            Vendor::Anthropic => &ANTHROPIC,
++            Vendor::Gemini => &GEMINI,
++            _ => &OPENAI,
++        },
+     }
+ }
+ 
+diff --git a/src/components/editor.rs b/src/components/editor.rs
+index 91a7936..871a0ad 100644
+--- a/src/components/editor.rs
++++ b/src/components/editor.rs
+@@ -28,9 +28,9 @@ impl EditorApp {
+             let dark = self.dark;
+             let font_size = self.font_size;
+             let id = egui::Id::new(("toneedit-text", doc.id));
+-            let mut layouter = move |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+-                let layout = syntax::highlight(buf.as_str(), lang, dark, wrap_width, font_size);
+-                ui.fonts_mut(|fonts| fonts.layout_job(layout))
++            let mut layouter = move |ui: &egui::Ui, buf: &str, wrap_width: f32| {
++                let layout = syntax::highlight(buf, lang, dark, wrap_width, font_size);
++                ui.fonts(|fonts| fonts.layout_job(layout))
+             };
+             let line_total = doc.text.bytes().filter(|b| *b == b'\n').count() + 1;
+             let gutter = if line_total <= 4_000 {
+@@ -62,7 +62,7 @@ impl EditorApp {
+                 actions.push(Action::RefreshSearch);
+             }
+             if let Some(range) = output.cursor_range {
+-                self.cursor_char = range.primary.index;
++                self.cursor_char = range.primary.ccursor.index;
+             }
+             if let Some((start,end)) = self.jump.take() {
+                 if let Some(mut state) = egui::TextEdit::load_state(ctx, id) {
+diff --git a/src/components/status.rs b/src/components/status.rs
+index 60c71ba..47818b1 100644
+--- a/src/components/status.rs
++++ b/src/components/status.rs
+@@ -55,7 +55,10 @@ impl EditorApp {
+                             }
+                         });
+                     if before_eol != doc.newline { doc.dirty = true; }
+-                    if doc.dirty { ui.colored_label(Color32::YELLOW, "Modified"); }
++                    if doc.dirty {
++                        ui.colored_label(Color32::YELLOW,
++                            crate::gentaro::save_status(doc.dirty).unwrap_or_else(|_| "Modified".into()));
++                    }
+                     if doc.mixed_endings { ui.colored_label(Color32::YELLOW, "Mixed original EOL"); }
+                 }
+                 ui.separator();
+diff --git a/src/gentaro.rs b/src/gentaro.rs
+new file mode 100644
+index 0000000..864fc34
+--- /dev/null
++++ b/src/gentaro.rs
+@@ -0,0 +1,397 @@
++//! Native Rust execution bridge for the currently documented subset of ToneGentaro.
++//! The actual editing policy is stored as Japanese `.tone` source, not repeated here.
++//! No JavaScript, HTML or Python is used by this runtime.
++use std::collections::HashMap;
++use std::sync::OnceLock;
++
++const RULES: &str = include_str!("../gentaro/ToneEdit_規則.tone");
++const STARTUP: &str = include_str!("../gentaro/ToneEdit_起動.tone");
++
++#[derive(Clone, Debug, PartialEq)]
++pub enum Value {
++    Text(String),
++    Bool(bool),
++    Integer(i64),
++}
++impl Value {
++    fn boolean(self) -> Result<bool, String> {
++        if let Self::Bool(value) = self { Ok(value) } else { Err("Expected a Gentaro true/false result".into()) }
++    }
++    fn text(self) -> Result<String, String> {
++        if let Self::Text(value) = self { Ok(value) } else { Err("Expected a Gentaro text result".into()) }
++    }
++}
++#[derive(Debug)]
++enum Statement {
++    If { condition: String, yes: Vec<Statement>, no: Vec<Statement> },
++    Return(String),
++    Display(String),
++    Variable(String, String),
++}
++struct Function { params: Vec<String>, body: Vec<Statement> }
++struct Engine { functions: HashMap<String, Function> }
++
++impl Engine {
++    fn parse(source: &str) -> Result<Self, String> {
++        let lines: Vec<&str> = source.lines().map(str::trim)
++            .filter(|line| !line.is_empty() && !line.starts_with('#')).collect();
++        let mut at = 0;
++        let mut functions = HashMap::new();
++        while at < lines.len() {
++            let signature = lines[at].strip_prefix("関数 ")
++                .ok_or_else(|| format!("Expected 関数 declaration at: {}", lines[at]))?
++                .strip_suffix(':').ok_or("Gentaro function needs a colon")?;
++            let (name, raw_params) = signature.split_once('(').ok_or("Function needs parentheses")?;
++            let raw_params = raw_params.strip_suffix(')').ok_or("Unclosed function parameters")?;
++            let params: Vec<String> = if raw_params.trim().is_empty() {
++                Vec::new()
++            } else { raw_params.split(',').map(|p| p.trim().to_owned()).collect() };
++            if name.trim().is_empty() || params.iter().any(|p| p.is_empty()) {
++                return Err("Empty function or parameter name".into());
++            }
++            at += 1;
++            let body = parse_block(&lines, &mut at)?;
++            if lines.get(at) != Some(&"終わり") { return Err(format!("Missing 終わり for {name}")); }
++            at += 1;
++            if functions.insert(name.trim().to_owned(), Function { params, body }).is_some() {
++                return Err(format!("Duplicate Gentaro function: {name}"));
++            }
++        }
++        Ok(Self { functions })
++    }
++    fn call(&self, name: &str, args: &[Value]) -> Result<Value, String> {
++        let function = self.functions.get(name).ok_or_else(|| format!("No Gentaro function: {name}"))?;
++        if args.len() != function.params.len() {
++            return Err(format!("Argument count mismatch for Gentaro function: {name}"));
++        }
++        let mut vars: HashMap<String, Value> = function.params.iter().cloned()
++            .zip(args.iter().cloned()).collect();
++        let mut budget = 1024usize;
++        execute(&function.body, &mut vars, &mut budget)?
++            .ok_or_else(|| format!("No return value from Gentaro function: {name}"))
++    }
++}
++fn parse_block(lines: &[&str], at: &mut usize) -> Result<Vec<Statement>, String> {
++    let mut statements = Vec::new();
++    while let Some(&line) = lines.get(*at) {
++        if line == "終わり" || line == "そうでなければ:" { break; }
++        if let Some(cond) = line.strip_prefix("もし ").and_then(|part| part.strip_suffix(" なら:")) {
++            *at += 1;
++            let yes = parse_block(lines, at)?;
++            let no = if lines.get(*at) == Some(&"そうでなければ:") {
++                *at += 1;
++                parse_block(lines, at)?
++            } else { Vec::new() };
++            if lines.get(*at) != Some(&"終わり") {
++                return Err(format!("Missing 終わり after もし: {cond}"));
++            }
++            *at += 1;
++            statements.push(Statement::If { condition: cond.to_owned(), yes, no });
++            continue;
++        }
++        if let Some(expr) = line.strip_suffix(" を返す") {
++            statements.push(Statement::Return(expr.to_owned()));
++        } else if let Some(expr) = line.strip_suffix(" を表示") {
++            statements.push(Statement::Display(expr.to_owned()));
++        } else if let Some(declaration) = line.strip_prefix("変数 ") {
++            let (name, expression) = declaration.split_once(" = ")
++                .ok_or("Invalid Gentaro variable assignment")?;
++            statements.push(Statement::Variable(name.to_owned(), expression.to_owned()));
++        } else {
++            return Err(format!("Unrecognized Gentaro statement: {line}"));
++        }
++        *at += 1;
++    }
++    Ok(statements)
++}
++fn execute(body: &[Statement], vars: &mut HashMap<String, Value>, budget: &mut usize)
++    -> Result<Option<Value>, String> {
++    for statement in body {
++        if *budget == 0 { return Err("Gentaro execution budget exceeded".into()); }
++        *budget -= 1;
++        match statement {
++            Statement::Return(expr) => return Ok(Some(evaluate(expr, vars)?)),
++            Statement::Display(expr) => {
++                // Display is intentionally NOT printed from embedded UI policies.
++                let _ = evaluate(expr, vars)?;
++            }
++            Statement::Variable(name, expr) => {
++                let value = evaluate(expr, vars)?;
++                vars.insert(name.clone(), value);
++            }
++            Statement::If { condition, yes, no } => {
++                let value = evaluate(condition, vars)?.boolean()?;
++                if let Some(result) = execute(if value { yes } else { no }, vars, budget)? {
++                    return Ok(Some(result));
++                }
++            }
++        }
++    }
++    Ok(None)
++}
++
++#[derive(Clone, Debug, PartialEq)]
++enum Token { Text(String), Identifier(String), Number(i64), Symbol(String), Open, Close }
++fn tokenize(input: &str) -> Result<Vec<Token>, String> {
++    let chars: Vec<char> = input.chars().collect();
++    let mut at = 0;
++    let mut out = Vec::new();
++    while at < chars.len() {
++        let c = chars[at];
++        if c.is_whitespace() { at += 1; continue; }
++        if c == '「' {
++            let start = at + 1;
++            at += 1;
++            while at < chars.len() && chars[at] != '」' { at += 1; }
++            if at == chars.len() { return Err("Unclosed Gentaro text literal".into()); }
++            out.push(Token::Text(chars[start..at].iter().collect()));
++            at += 1;
++        } else if c.is_ascii_digit() {
++            let start = at;
++            while at < chars.len() && chars[at].is_ascii_digit() { at += 1; }
++            let number: String = chars[start..at].iter().collect();
++            out.push(Token::Number(number.parse().map_err(|_| "Integer overflow")?));
++        } else if c == '(' { out.push(Token::Open); at += 1; }
++        else if c == ')' { out.push(Token::Close); at += 1; }
++        else if "=!<>+-*/%&|".contains(c) {
++            let mut op = c.to_string();
++            at += 1;
++            if at < chars.len() && (chars[at] == '=' || chars[at] == c && (c == '&' || c == '|')) {
++                op.push(chars[at]); at += 1;
++            }
++            if !["==", "!=", ">=", "<=", ">", "<", "+", "-", "*", "/", "%", "!", "&&", "||"].contains(&op.as_str()) {
++                return Err(format!("Unsupported Gentaro operator: {op}"));
++            }
++            out.push(Token::Symbol(op));
++        } else {
++            let start = at;
++            while at < chars.len() && !chars[at].is_whitespace()
++                && !"「」()=!<>+-*/%&|".contains(chars[at]) { at += 1; }
++            if start == at { return Err(format!("Unrecognized Gentaro character: {}", chars[at])); }
++            let name: String = chars[start..at].iter().collect();
++            if name == "かつ" { out.push(Token::Symbol("&&".into())); }
++            else if name == "または" { out.push(Token::Symbol("||".into())); }
++            else { out.push(Token::Identifier(name)); }
++        }
++    }
++    Ok(out)
++}
++struct Expression<'a> { tokens: Vec<Token>, at: usize, vars: &'a HashMap<String, Value> }
++impl<'a> Expression<'a> {
++    fn eat(&mut self, op: &str) -> bool {
++        if let Some(Token::Symbol(current)) = self.tokens.get(self.at) {
++            if current == op { self.at += 1; return true; }
++        }
++        false
++    }
++    fn logical_or(&mut self) -> Result<Value, String> {
++        let mut left = self.logical_and()?;
++        while self.eat("||") {
++            let right = self.logical_and()?;
++            left = Value::Bool(left.boolean()? || right.boolean()?);
++        }
++        Ok(left)
++    }
++    fn logical_and(&mut self) -> Result<Value, String> {
++        let mut left = self.compare()?;
++        while self.eat("&&") {
++            let right = self.compare()?;
++            left = Value::Bool(left.boolean()? && right.boolean()?);
++        }
++        Ok(left)
++    }
++    fn compare(&mut self) -> Result<Value, String> {
++        let mut left = self.add()?;
++        loop {
++            let operator = if self.eat("==") { "==" } else if self.eat("!=") { "!=" }
++                else if self.eat(">=") { ">=" } else if self.eat("<=") { "<=" }
++                else if self.eat(">") { ">" } else if self.eat("<") { "<" }
++                else { break; };
++            let right = self.add()?;
++            let result = match operator {
++                "==" => left == right,
++                "!=" => left != right,
++                _ => match (&left, &right) {
++                    (Value::Integer(a), Value::Integer(b)) => match operator {
++                        ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, _ => unreachable!(),
++                    },
++                    _ => return Err("Comparison requires two integers".into()),
++                },
++            };
++            left = Value::Bool(result);
++        }
++        Ok(left)
++    }
++    fn add(&mut self) -> Result<Value, String> {
++        let mut left = self.multiply()?;
++        loop {
++            let operator = if self.eat("+") { "+" } else if self.eat("-") { "-" } else { break };
++            let right = self.multiply()?;
++            left = match (left, right, operator) {
++                (Value::Text(a), Value::Text(b), "+") => Value::Text(a + &b),
++                (Value::Integer(a), Value::Integer(b), "+") => Value::Integer(a.checked_add(b).ok_or("Integer overflow")?),
++                (Value::Integer(a), Value::Integer(b), "-") => Value::Integer(a.checked_sub(b).ok_or("Integer overflow")?),
++                _ => return Err("Incompatible Gentaro arithmetic operands".into()),
++            };
++        }
++        Ok(left)
++    }
++    fn multiply(&mut self) -> Result<Value, String> {
++        let mut left = self.atom()?;
++        loop {
++            let operator = if self.eat("*") { "*" } else if self.eat("/") { "/" }
++                else if self.eat("%") { "%" } else { break; };
++            let right = self.atom()?;
++            left = match (left, right) {
++                (Value::Integer(a), Value::Integer(b)) => Value::Integer(match operator {
++                    "*" => a.checked_mul(b), "/" => a.checked_div(b), "%" => a.checked_rem(b), _ => None,
++                }.ok_or("Gentaro arithmetic overflow or division by zero")?),
++                _ => return Err("Multiplication requires integers".into()),
++            };
++        }
++        Ok(left)
++    }
++    fn atom(&mut self) -> Result<Value, String> {
++        if self.eat("!") { return Ok(Value::Bool(!self.atom()?.boolean()?)); }
++        if self.eat("-") {
++            if let Value::Integer(value) = self.atom()? {
++                return Ok(Value::Integer(value.checked_neg().ok_or("Integer overflow")?));
++            }
++            return Err("Unary minus requires an integer".into());
++        }
++        let token = self.tokens.get(self.at).cloned().ok_or("Missing Gentaro expression")?;
++        self.at += 1;
++        match token {
++            Token::Text(s) => Ok(Value::Text(s)),
++            Token::Number(n) => Ok(Value::Integer(n)),
++            Token::Identifier(name) if name == "真" => Ok(Value::Bool(true)),
++            Token::Identifier(name) if name == "偽" => Ok(Value::Bool(false)),
++            Token::Identifier(name) => self.vars.get(&name).cloned().ok_or_else(|| format!("Unknown Gentaro variable: {name}")),
++            Token::Open => {
++                let value = self.logical_or()?;
++                if self.tokens.get(self.at) != Some(&Token::Close) { return Err("Missing closing parenthesis".into()); }
++                self.at += 1;
++                Ok(value)
++            }
++            _ => Err("Unsupported Gentaro expression".into()),
++        }
++    }
++}
++fn evaluate(expr: &str, vars: &HashMap<String, Value>) -> Result<Value, String> {
++    let mut parser = Expression { tokens: tokenize(expr)?, at: 0, vars };
++    let result = parser.logical_or()?;
++    if parser.at != parser.tokens.len() { return Err(format!("Trailing expression tokens in {expr}")); }
++    Ok(result)
++}
++
++static ENGINE: OnceLock<Result<Engine, String>> = OnceLock::new();
++fn invoke(name: &str, args: &[Value]) -> Result<Value, String> {
++    let engine = ENGINE.get_or_init(|| {
++        let mut engine = Engine::parse(RULES)?;
++        let startup = Engine::parse(STARTUP)?;
++        for (name, function) in startup.functions {
++            if engine.functions.insert(name.clone(), function).is_some() {
++                return Err(format!("Duplicate name across Gentaro components: {name}"));
++            }
++        }
++        Ok(engine)
++    }).as_ref().map_err(|error| error.clone())?;
++    engine.call(name, args)
++}
++fn boolean(v: bool) -> Value { Value::Bool(v) }
++
++pub fn product_name() -> Result<String, String> {
++    invoke("製品名", &[])?.text()
++}
++
++pub fn document_title(name: &str, modified: bool) -> Result<String, String> {
++    invoke("文書名を作る", &[Value::Text(name.to_owned()), boolean(modified)])?.text()
++}
++pub fn block_unsafe_save(file_exists: bool, timestamp_equal: bool, content_equal: bool) -> Result<bool, String> {
++    invoke("保存を拒否する", &[boolean(file_exists), boolean(timestamp_equal), boolean(content_equal)])?.boolean()
++}
++pub fn skip_search(query: &str) -> Result<bool, String> {
++    invoke("検索を省略する", &[Value::Text(query.to_owned())])?.boolean()
++}
++pub fn split_conversation(has_history: bool, vendor_changed: bool, endpoint_changed: bool) -> Result<bool, String> {
++    invoke("会話を分離する", &[boolean(has_history), boolean(vendor_changed), boolean(endpoint_changed)])?.boolean()
++}
++pub fn api_key_required(vendor_id: &str) -> Result<bool, String> {
++    invoke("AI鍵が必要", &[Value::Text(vendor_id.to_owned())])?.boolean()
++}
++pub fn provider_protocol(vendor_id: &str) -> Result<String, String> {
++    invoke("API形式を選ぶ", &[Value::Text(vendor_id.to_owned())])?.text()
++}
++pub fn reject_ai_send(in_flight: bool, empty: bool, too_large: bool) -> Result<bool, String> {
++    invoke("送信を拒否する", &[boolean(in_flight), boolean(empty), boolean(too_large)])?.boolean()
++}
++pub fn save_status(modified: bool) -> Result<String, String> {
++    invoke("入力済みの表示", &[boolean(modified)])?.text()
++}
++pub fn installer_path_denied(not_absolute: bool, has_parent: bool, unsafe_depth: bool) -> Result<bool, String> {
++    invoke("インストール先を拒否する", &[boolean(not_absolute), boolean(has_parent), boolean(unsafe_depth)])?.boolean()
++}
++pub fn uninstallation_allowed(marker_valid: bool, destination_valid: bool) -> Result<bool, String> {
++    invoke("削除を許可する", &[boolean(marker_valid), boolean(destination_valid)])?.boolean()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test] fn parses_japanese_functions() { assert!(Engine::parse(RULES).is_ok()); }
++    #[test] fn document_names() {
++        assert_eq!(document_title("あ.txt", true).unwrap(), "あ.txt ●");
++        assert_eq!(document_title("a.txt", false).unwrap(), "a.txt");
++    }
++    #[test] fn identity_and_license() {
++        assert_eq!(product_name().unwrap(), "ToneEdit Studio");
++        assert_eq!(invoke("ライセンス", &[]).unwrap(), Value::Text("MIT".into()));
++        assert_eq!(invoke("課金方式", &[]).unwrap(), Value::Text("完全無料".into()));
++    }
++    #[test] fn preserve_external_edits() {
++        assert_eq!(block_unsafe_save(true, true, true).unwrap(), false);
++        assert_eq!(block_unsafe_save(false, true, true).unwrap(), true);
++        assert_eq!(block_unsafe_save(true, false, true).unwrap(), true);
++        assert_eq!(block_unsafe_save(true, true, false).unwrap(), true);
++    }
++    #[test] fn search_and_credential_rules() {
++        assert!(skip_search("").unwrap());
++        assert!(!skip_search("日本語").unwrap());
++        assert!(!api_key_required("ollama").unwrap());
++        assert!(api_key_required("openai").unwrap());
++    }
++    #[test] fn cross_vendor_chat_is_isolated() {
++        assert!(split_conversation(true, true, false).unwrap());
++        assert!(split_conversation(true, false, true).unwrap());
++        assert!(!split_conversation(false, true, true).unwrap());
++    }
++    #[test] fn routes_ai_protocols() {
++        assert_eq!(provider_protocol("anthropic").unwrap(), "anthropic");
++        assert_eq!(provider_protocol("gemini").unwrap(), "gemini");
++        assert_eq!(provider_protocol("openai").unwrap(), "openai互換");
++        assert_eq!(provider_protocol("deepseek").unwrap(), "openai互換");
++    }
++    #[test] fn sends_are_explicit_and_safe() {
++        assert!(reject_ai_send(true, false, false).unwrap());
++        assert!(reject_ai_send(false, true, false).unwrap());
++        assert!(reject_ai_send(false, false, true).unwrap());
++        assert!(!reject_ai_send(false, false, false).unwrap());
++        assert_eq!(save_status(true).unwrap(), "未保存");
++    }
++    #[test] fn deletion_requires_two_validations() {
++        assert!(!uninstallation_allowed(false, true).unwrap());
++        assert!(!uninstallation_allowed(true, false).unwrap());
++        assert!(uninstallation_allowed(true, true).unwrap());
++    }
++    #[test] fn deny_risky_install_directory() {
++        assert!(installer_path_denied(true, false, false).unwrap());
++        assert!(installer_path_denied(false, true, false).unwrap());
++        assert!(!installer_path_denied(false, false, false).unwrap());
++    }
++    #[test] fn expression_operators() {
++        let vars = HashMap::new();
++        assert_eq!(evaluate("(3 + 2) * 4 == 20", &vars).unwrap(), boolean(true));
++        assert_eq!(evaluate("真 かつ 偽", &vars).unwrap(), boolean(false));
++        assert_eq!(evaluate("「日本」 + 「語」", &vars).unwrap(), Value::Text("日本語".into()));
++    }
++}
+diff --git a/src/main.rs b/src/main.rs
+index 4b76502..2f499bf 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -8,6 +8,7 @@ mod workspace;
+ mod ai;
+ mod google_oauth;
+ mod components;
++mod gentaro;
+ 
+ use document::{Encoding, LineEnding};
+ use eframe::egui::{self, Key};
+@@ -30,9 +31,11 @@ fn main() -> eframe::Result<()> {
+             Err(error) => { eprintln!("ToneEdit self-test failed: {error}"); std::process::exit(1); }
+         }
+     }
++    let display_name = gentaro::product_name().unwrap_or_else(|_| "ToneEdit Studio".to_owned());
+     let options = eframe::NativeOptions {
++        renderer: eframe::Renderer::Wgpu,
+         viewport: egui::ViewportBuilder::default()
+-            .with_title("ToneEdit Studio 1.2.1")
++            .with_title(format!("{display_name} 1.2.1"))
+             .with_inner_size([1400.0, 870.0])
+             .with_min_inner_size([800.0, 520.0]),
+         ..Default::default()
+@@ -122,7 +125,11 @@ impl Document {
+         self.path.as_ref().and_then(|p| p.file_name()).map(|s| s.to_string_lossy().into_owned())
+             .unwrap_or_else(|| format!("Untitled-{}", self.id))
+     }
+-    fn display_title(&self) -> String { format!("{}{}", self.title(), if self.dirty { " ●" } else { "" }) }
++    fn display_title(&self) -> String {
++        let title = self.title();
++        gentaro::document_title(&title, self.dirty)
++            .unwrap_or_else(|_| format!("{title}{}", if self.dirty { " ●" } else { "" }))
++    }
+     fn from_file(id: u64, path: PathBuf) -> Result<Self, String> {
+         let result = document::load(&path)?;
+         let disk_fingerprint = Some(fingerprint(&path)?);
+@@ -133,18 +140,31 @@ impl Document {
+     }
+     fn save(&mut self, path: &Path, force_overwrite: bool) -> Result<(), String> {
+         if !force_overwrite && self.path.as_deref() == Some(path) {
++            // 保存可否の分岐は言太郎ソースを優先して評価する。
++            // 原本保護のため、Rustの安全確認も必ず残す（二重防御）。
++            let file_exists = path.is_file();
++            let time_matches = file_exists && self.disk_modified == document::file_modification(path);
++            let content_matches = if file_exists && time_matches {
++                match self.disk_fingerprint {
++                    Some(known) => fingerprint(path)? == known,
++                    None => true,
++                }
++            } else { false };
++            let blocked_by_gentaro = gentaro::block_unsafe_save(file_exists, time_matches, content_matches)
++                .unwrap_or(true);
+             // A file deleted between opening and saving is also an external change.
+             // Do not silently resurrect it. The explicit force command can override.
+-            if !path.is_file() {
++            if !file_exists {
+                 return Err("The original file was removed or replaced. Use Save As to avoid data loss.".into());
+             }
+-            if self.disk_modified != document::file_modification(path) {
++            if !time_matches {
+                 return Err("The file was changed or removed by another program. Use Save As to preserve both versions or explicitly overwrite the changed file.".into());
+             }
+-            if let Some(known) = self.disk_fingerprint {
+-                if fingerprint(path)? != known {
+-                    return Err("The contents of this file changed outside ToneEdit Studio, even though its timestamp did not. Save As or explicitly overwrite it.".into());
+-                }
++            if !content_matches {
++                return Err("The contents of this file changed outside ToneEdit Studio, even though its timestamp did not. Save As or explicitly overwrite it.".into());
++            }
++            if blocked_by_gentaro {
++                return Err("Gentaro policy rejected an unsafe save".into());
+             }
+         }
+         document::save(path, &self.text, self.encoding, self.newline)?;
+diff --git a/src/search.rs b/src/search.rs
+index b4609c4..f754155 100644
+--- a/src/search.rs
++++ b/src/search.rs
+@@ -18,7 +18,9 @@ pub fn matcher(query: &str, regex_mode: bool, case_sensitive: bool) -> Result<Re
+ 
+ pub fn find(text: &str, query: &str, regex_mode: bool, case_sensitive: bool, limit: usize)
+     -> Result<Matches, String> {
+-    if query.is_empty() { return Ok(Matches::default()); }
++    if crate::gentaro::skip_search(query).unwrap_or(query.is_empty()) {
++        return Ok(Matches::default());
++    }
+     let regex = matcher(query, regex_mode, case_sensitive)?;
+     let mut locations = Vec::new();
+     let mut truncated = false;
+diff --git "a/\350\250\200\345\244\252\351\203\216_\347\247\273\346\244\215\347\212\266\346\263\201.md" "b/\350\250\200\345\244\252\351\203\216_\347\247\273\346\244\215\347\212\266\346\263\201.md"
+new file mode 100644
+index 0000000..b8d738f
+--- /dev/null
++++ "b/\350\250\200\345\244\252\351\203\216_\347\247\273\346\244\215\347\212\266\346\263\201.md"
+@@ -0,0 +1,42 @@
++# ToneEdit Studio 言太郎移植状況
++
++**製品:** ToneEdit Studio / MIT / 完全無料 / Windows 64-bit
++
++**基本方針:** 言太郎 > Rust。不可能な箇所のみRustで補完。言太郎への機能追加要件を必ず記録する。HTML・Python禁止、ADAF/個人ペルソナとの連携なし。
++
++## 実際に書き換えた機能
++
++1. 製品名表示とライセンスに関する規則
++2. タブの変更マークの付加
++3. 元ファイルの存在・変更時刻・内容ハッシュによる保存拒否規則
++4. 空文字検索の抑止
++5. AI事業者・接続先変更時の会話履歴分離
++6. OSの資格情報保管からAPIキーを取得する必要性の判定
++7. OpenAI互換 / Anthropic / Gemini APIのプロトコル分岐
++8. Windowsインストール先パスの安全性判定
++9. AI送信中・空入力・サイズ超過時の送信拒否
++10. ステータスバーの保存状態の日本語表示
++11. Windowsアンインストール時の所有者確認・設置先保護
++
++上記は `.tone` の関数を `src/gentaro.rs` のRustネイティブ実行器で呼び出す形で既存コードへ組み込みました。全ての主要コンポーネントを `.tone` に置き換えたわけではありません。表示・保存など危険を伴う処理はRustの二重防御を残します。
++
++## 未移植の機能
++
++- テキストUI本体 / 複数タブ / ファイル一覧 / テーマ / ステータスバー
++- 正規表現エンジンと文字コード変換
++- AIリクエストJSON生成、HTTPS送信、各社レスポンス解析
++- OAuth 2.0/PKCE と秘密情報保管
++- GUI形式のインストール・アンインストールおよびスタートメニュー登録
++- Rust Cargoの一括ビルド/Windows EXE生成
++
++各項目を言太郎で可能にするAPI・構文要件は `gentaro/feedback/言太郎_機能追加要求.md` を参照。
++
++## 検証
++
++- ソース変換は行ったが、移行版のコンパイルとWindows GUI実行は **未実施**。
++- 追加したRustテストは検証用ソースであって、合格実績ではない。
++- 旧版Windows GUI試験の0/30件問題は解決確認できていない。
++
++## 配布ファイル
++
++`ToneEdit-Studio/` ディレクトリ全体を一式として保存。Gitのリポジトリ公開・Windowsビルド・配布時には `.tone` ソースとMITライセンスを添付する。
