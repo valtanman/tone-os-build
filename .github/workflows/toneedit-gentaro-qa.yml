@@ -53,6 +53,19 @@ jobs:
           git apply --directory=workspace/ToneEdit-Studio toneedit/gentaro-overlay.patch
           if ($LASTEXITCODE -ne 0) { throw 'Gentaro overlay installation failed' }
           if (!(Test-Path workspace/ToneEdit-Studio/src/gentaro.rs)) { throw 'Gentaro interpreter missing' }
+      - name: Enable Windows WGPU Direct3D 12 renderer features for all EXEs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $extra=@'
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "24", features = ["dx12"] }
+'@
+          foreach ($m in @('Cargo.toml','packaging/setup/Cargo.toml','packaging/uninstall/Cargo.toml')) {
+            $p=Join-Path 'workspace/ToneEdit-Studio' $m
+            if (!(Test-Path $p)) { throw "Missing Cargo manifest: $m" }
+            Add-Content -LiteralPath $p -Value $extra -Encoding utf8
+          }
       - name: Cargo unit tests including executable Gentaro policies
         shell: pwsh
         working-directory: workspace/ToneEdit-Studio
@@ -93,10 +106,32 @@ jobs:
           $rows | Export-Csv gentaro-qa/self-tests-10x.csv -NoTypeInformation -Encoding UTF8
           Copy-Item 'workspace/ToneEdit-Studio/gentaro' 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/gentaro' -Recurse
           Copy-Item 'workspace/ToneEdit-Studio/言太郎_移植状況.md' 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free/'
+      - name: Record Windows GUI startup error details
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $env:WGPU_BACKEND='dx12'
+          $env:WGPU_FORCE_FALLBACK_ADAPTER='1'
+          New-Item -ItemType Directory -Force gentaro-qa | Out-Null
+          foreach ($exe in @('toneedit-studio.exe','toneedit-setup.exe','toneedit-uninstall.exe')) {
+            $binary=Join-Path 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free' $exe
+            if (!(Test-Path $binary)) { continue }
+            $out="gentaro-qa/$exe.stdout.txt";$err="gentaro-qa/$exe.stderr.txt"
+            try {
+              $process=Start-Process -FilePath (Resolve-Path $binary) -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+              Start-Sleep -Seconds 3
+              $process.Refresh()
+              if($process.HasExited){Write-Host "$exe exit $($process.ExitCode)";}else{Write-Host "$exe running; handle $($process.MainWindowHandle)";Stop-Process -Id $process.Id -Force}
+              if(Test-Path $err){Get-Content $err -ErrorAction SilentlyContinue | Select-Object -First 30 | Write-Host}
+            } catch { Write-Host "$exe diagnostic failure: $_" }
+          }
       - name: Actual Windows GUI launch and keyboard interactions (10 rounds)
         shell: powershell
         continue-on-error: true
         run: |
+          $env:WGPU_BACKEND='dx12'
+          $env:WGPU_FORCE_FALLBACK_ADAPTER='1'
           .\.github\tests\toneedit-gui-10x.ps1 -ReleaseDirectory 'workspace/ToneEdit-Studio/dist/ToneEdit-Studio-1.2.1-Windows-x64-MIT-Free' -Iterations 10
       - name: Publish Gentaro QA results
         if: always()
