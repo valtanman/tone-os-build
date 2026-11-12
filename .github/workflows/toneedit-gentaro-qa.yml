@@ -57,10 +57,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $extra=@'
-[target.'cfg(windows)'.dependencies]
-wgpu = { version = "24", features = ["dx12"] }
-'@
+          $extra=@(
+            "[target.'cfg(windows)'.dependencies]",
+            'wgpu = { version = "24", features = ["dx12"] }'
+          )
           foreach ($m in @('Cargo.toml','packaging/setup/Cargo.toml','packaging/uninstall/Cargo.toml')) {
             $p=Join-Path 'workspace/ToneEdit-Studio' $m
             if (!(Test-Path $p)) { throw "Missing Cargo manifest: $m" }
