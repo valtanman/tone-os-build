@@ -1,0 +1,3048 @@
+diff --git a/Cargo.toml b/Cargo.toml
+new file mode 100644
+index 0000000..e2b6969
+--- /dev/null
++++ b/Cargo.toml
+@@ -0,0 +1,45 @@
++[package]
++name = "toneedit-studio"
++version = "1.2.1"
++edition = "2021"
++license = "MIT"
++authors = ["ToneEdit Studio contributors"]
++description = "Rust-native, multi-document text and source editor"
++
++[dependencies]
++eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
++rfd = "=0.15.3"
++encoding_rs = "=0.8.35"
++regex = "=1.11.1"
++serde = { version = "=1.0.217", features = ["derive"] }
++serde_json = "=1.0.138"
++
++[profile.release]
++opt-level = 3
++lto = "thin"
++codegen-units = 1
++strip = true
++
++[package.metadata]
++platform = "Windows 10/11 (also supports Linux and macOS when platform dependencies are installed)"
++
++# AI vendor network adapters and OAuth, implemented in Rust.
++[dependencies.reqwest]
++version = "=0.12.15"
++default-features = false
++features = ["blocking", "json", "rustls-tls"]
++
++[dependencies.keyring]
++version = "=3.6.2"
++
++[dependencies.rand]
++version = "=0.8.5"
++
++[dependencies.base64]
++version = "=0.22.1"
++
++[dependencies.sha2]
++version = "=0.10.8"
++
++[build-dependencies]
++winres = "=0.1.12"
+diff --git a/gentaro/README.md b/gentaro/README.md
+new file mode 100644
+index 0000000..0cc5961
+--- /dev/null
++++ b/gentaro/README.md
+@@ -0,0 +1,65 @@
++# ToneEdit Studio — 言太郎（ToneGentaro.）移行版
++
++**使用言語:** 言太郎（`.tone`）優先、言太郎の未対応機能のみRust（ネイティブGUI・OS API・通信・ファイルI/O）。Python、JavaScript、HTML製GUIは一切使用しません。**配布方針:** 完全無料・MIT・Windows x64。
++
++## 言太郎で実際に記述した部分
++
++- `ToneEdit_起動.tone`: 製品名・MIT・無料版表示・起動メッセージ
++- `ToneEdit_規則.tone`: 文書名、保存拒否判定、空文字検索、AI会話の事業者隔離、APIキー要否、APIプロトコル分類、送信条件、未保存表示、インストール先の安全判定、アンインストールの安全条件
++
++これらの一部を `src/gentaro.rs`（Rust製のネイティブ言太郎サブセット実行器）で呼び出し、既存アプリの機能に組み込んでいます。`.tone` はコンパイル時にRust本体へ埋め込まれます。外部ダウンロードした未検証スクリプトは実行しません。
++
++### 使用している言太郎構文
++
++```text
++関数 保存を拒否する(存在する, 時刻一致, 内容一致):
++    もし 存在する == 偽 なら:
++        真 を返す
++    終わり
++    もし 時刻一致 == 偽 なら:
++        真 を返す
++    終わり
++    もし 内容一致 == 偽 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++```
++
++これは公知の言太郎試作構文に沿った書き方です。現在のアプリ内Rustブリッジが認識するのは、`関数`、`変数`、`もし`、`そうでなければ`、`終わり`、`を返す`、`を表示`、文字列（`「」`）、整数、真偽、基本演算子の限定サブセットです。**言太郎本体の正式コンパイラとの完全互換性を保証するものではありません。**
++
++### Rustで引き続き必要な部分
++
++1. `src/document.rs`: UTF-8/UTF-16/Shift-JIS変換、原子的保存、バックアップ
++2. `src/components/*.rs`: 独立コンポーネント式GUI、日本語IME、ショートカット
++3. `src/ai/providers/*.rs`: HTTP API、HTTPS、JSON、レスポンス解析
++4. `src/google_oauth.rs`: OAuth/PKCE、認証情報をOSで保護する仕組み
++5. `packaging/setup`, `packaging/uninstall`: Windowsレジストリ、ショートカット、インストールと削除
++
++これらのRust代替に必要な言太郎機能を `feedback/言太郎_機能追加要求.md` に記録しています。
++
++## 既存アプリへの接続箇所
++
++| 言太郎関数 | 呼出元（Rust側） |
++|---|---|
++| 製品名 | `src/main.rs` GUIタイトル |
++| 文書名を作る | `src/main.rs` 未保存タブの表示 |
++| 保存を拒否する | `src/main.rs` 保存競合・外部変更の判定 |
++| 検索を省略する | `src/search.rs` 検索処理の先頭 |
++| 会話を分離する | `src/ai.rs` APIベンダー変更時の新規会話 |
++| AI鍵が必要 | `src/ai.rs` OSのAPI資格情報取得判断 |
++| API形式を選ぶ | `src/ai/providers/mod.rs` 3系統のアダプター選択 |
++| 送信を拒否する | `src/ai.rs` 空メッセージ、送信中、サイズ制限 |
++| 入力済みの表示 | `src/components/status.rs` ステータスバーの未保存表示 |
++| インストール先を拒否する | `packaging/setup/src/main.rs` パス審査 |
++| 削除を許可する | `packaging/uninstall/src/main.rs` 所有者印と設置先の二重確認 |
++
++安全のため外部変更の検出、ファイル破壊回避、AI送信先隔離とインストール先保護は、Rust側にもフェイルセーフのチェックを残しています。言太郎での誤判定やランタイムの解析失敗で危険な操作が許可されないようにするためです。
++
++## 検証状況
++
++- **今回行ったこと:** 既存の1.2.2作業ソースから再構成し、`.tone` 業務規則、Rustネイティブ実行器、UI/AI/保存/セットアップへの呼出し、Rust単体テストコードを追加。
++- **今回まだ行っていないこと:** 言太郎本体でのコンパイル、Rust/Windows EXE一括ビルド、GUI操作の10回再検証、インストール・アンインストール試験。今回の依頼は「言太郎で書き直す」ため、明示的な次のビルド指示は受けていません。
++- **既知の問題:** これまでのWindows仮想試験でGUI起動が30試行とも不合格であり、言太郎へルールを移植しただけでは解消したとはいえません。
++
++**これは移行途中のソースコード版です。完成EXEや全機能の言太郎移植と誤認しないでください。**
+diff --git "a/gentaro/ToneEdit_\350\246\217\345\211\207.tone" "b/gentaro/ToneEdit_\350\246\217\345\211\207.tone"
+new file mode 100644
+index 0000000..a3fd506
+--- /dev/null
++++ "b/gentaro/ToneEdit_\350\246\217\345\211\207.tone"
+@@ -0,0 +1,105 @@
++# ToneEdit Studio - 言太郎の業務規則
++# MIT / UTF-8
++# このファイルは宣言済みの基本構文（関数・変数・もし・終わり・を返す）を使用する。
++# ネイティブ描画・ファイルI/O・ネットワーク処理はRust側の橋渡しが担当する。
++
++関数 文書名を作る(名前, 変更あり):
++    もし 変更あり == 真 なら:
++        名前 + 「 ●」 を返す
++    そうでなければ:
++        名前 を返す
++    終わり
++終わり
++
++関数 保存を拒否する(存在する, 時刻一致, 内容一致):
++    もし 存在する == 偽 なら:
++        真 を返す
++    終わり
++    もし 時刻一致 == 偽 なら:
++        真 を返す
++    終わり
++    もし 内容一致 == 偽 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 検索を省略する(検索語):
++    もし 検索語 == 「」 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 会話を分離する(既存の会話あり, 事業者変更あり, 接続先変更あり):
++    もし 既存の会話あり == 真 なら:
++        もし 事業者変更あり == 真 なら:
++            真 を返す
++        終わり
++        もし 接続先変更あり == 真 なら:
++            真 を返す
++        終わり
++    終わり
++    偽 を返す
++終わり
++
++関数 AI鍵が必要(事業者識別子):
++    もし 事業者識別子 == 「ollama」 なら:
++        偽 を返す
++    終わり
++    真 を返す
++終わり
++
++関数 API形式を選ぶ(事業者識別子):
++    もし 事業者識別子 == 「anthropic」 なら:
++        「anthropic」 を返す
++    終わり
++    もし 事業者識別子 == 「gemini」 なら:
++        「gemini」 を返す
++    終わり
++    「openai互換」 を返す
++終わり
++
++関数 送信を拒否する(送信中, 内容なし, 上限超過):
++    もし 送信中 == 真 なら:
++        真 を返す
++    終わり
++    もし 内容なし == 真 なら:
++        真 を返す
++    終わり
++    もし 上限超過 == 真 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 入力済みの表示(編集済み):
++    もし 編集済み == 真 なら:
++        「未保存」 を返す
++    そうでなければ:
++        「保存済み」 を返す
++    終わり
++終わり
++
++関数 インストール先を拒否する(絶対パスでない, 親参照あり, 危険な階層):
++    もし 絶対パスでない == 真 なら:
++        真 を返す
++    終わり
++    もし 親参照あり == 真 なら:
++        真 を返す
++    終わり
++    もし 危険な階層 == 真 なら:
++        真 を返す
++    終わり
++    偽 を返す
++終わり
++
++関数 削除を許可する(所有者印が正しい, 対象が正しい):
++    もし 所有者印が正しい == 偽 なら:
++        偽 を返す
++    終わり
++    もし 対象が正しい == 偽 なら:
++        偽 を返す
++    終わり
++    真 を返す
++終わり
+diff --git "a/gentaro/ToneEdit_\350\265\267\345\213\225.tone" "b/gentaro/ToneEdit_\350\265\267\345\213\225.tone"
+new file mode 100644
+index 0000000..fc4c8e2
+--- /dev/null
++++ "b/gentaro/ToneEdit_\350\265\267\345\213\225.tone"
+@@ -0,0 +1,18 @@
++# ToneEdit Studio の言太郎側エントリーポイント（設計・動作確認用）
++# ネイティブウィンドウはRust側で生成する。JavaScript/HTMLは使用しない。
++関数 製品名():
++    「ToneEdit Studio」 を返す
++終わり
++
++関数 ライセンス():
++    「MIT」 を返す
++終わり
++
++関数 課金方式():
++    「完全無料」 を返す
++終わり
++
++関数 起動案内():
++    「ToneEdit Studio」 を表示
++    「日本語プログラミング言語・言太郎による編集規則を有効化」 を表示
++終わり
+diff --git "a/gentaro/feedback/\350\250\200\345\244\252\351\203\216_\346\251\237\350\203\275\350\277\275\345\212\240\350\246\201\346\261\202.md" "b/gentaro/feedback/\350\250\200\345\244\252\351\203\216_\346\251\237\350\203\275\350\277\275\345\212\240\350\246\201\346\261\202.md"
+new file mode 100644
+index 0000000..f57097a
+--- /dev/null
++++ "b/gentaro/feedback/\350\250\200\345\244\252\351\203\216_\346\251\237\350\203\275\350\277\275\345\212\240\350\246\201\346\261\202.md"
+@@ -0,0 +1,17 @@
++# 言太郎（ToneGentaro.）へ反映する実装要件
++
++既存の確認可能な言太郎 v0.1.1 は `変数`、`関数`、`もし`、`そうでなければ`、`終わり`、`を返す`、`を表示`、反復などの基本構文と `.tone` を採用します。一方、既存の試作コンパイラはJavaScript/TypeScript出力が中心でした。本製品は **Python/HTMLを使用せず、Windows x64のネイティブGUI** が必須です。
++
++| 欠けている言太郎の仕組み | 追加する構文または標準ライブラリ | Rust代替の現状 | 受け入れテスト |
++|---|---|---|---|
++| ネイティブウィンドウ描画 | ウィンドウ・パネル・テキスト領域・イベント・IME・アクセシビリティ | `eframe/egui` のRust実装 | 日本語入力・保存ダイアログ・リサイズを10回 |
++| ファイル安全保存 | バイナリI/O・原子的置換・同期・バックアップ・署名/ハッシュ | `src/document.rs` | BOM、改行、外部変更、未保存復旧 |
++| 正規表現・Unicode | 正規表現コンパイル、UTF-8文字境界と範囲 | `src/search.rs` | 全角文字を含む検索・置換・Regex |
++| HTTP APIとTLS | HTTPS・ヘッダ・JSON・タイムアウト・送信許可 | `src/ai/providers/*.rs` | 送信先変更時の履歴隔離、認証情報非流出 |
++| OSの資格情報保管 | Windows Credential Manager、鍵の読込/削除 | `keyring` | APIキーが設定・履歴ファイルに残らない |
++| OAuth 2.0 / PKCE | URL構築・ループバック待受・state・PKCE検証 | `src/google_oauth.rs` | 不正state・期限切れ・拒否処理 |
++| Windowsインストール | 実行ファイル内包、`.lnk`、レジストリ、アンインストール | `packaging/` | スタートメニュー登録・安全な削除 |
++| モジュール/型/例外/非同期 | 名前空間、構造体、配列、辞書、非同期実行、例外、結果型 | Rustコンポーネント | 言太郎で同等機能の回帰試験通過 |
++| ネイティブ出力 | Windows x64 EXE（JavaScript/HTML不要） | Rust MSVC | Windows実機で起動確認 |
++
++移行方針：言太郎で表現可能な規則・分岐を `.tone` に置き、未実装のOS機能だけRustから提供する。API追加後は順次 `.tone` に移管する。既存GUIが正常に動くまで、ソースの置換を理由に製品を完成扱いしない。
+diff --git a/packaging/setup/Cargo.toml b/packaging/setup/Cargo.toml
+new file mode 100644
+index 0000000..41cb636
+--- /dev/null
++++ b/packaging/setup/Cargo.toml
+@@ -0,0 +1,15 @@
++[package]
++name = "toneedit-setup"
++version = "1.2.1"
++edition = "2021"
++build = "build.rs"
++license = "MIT"
++
++[dependencies]
++eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu"] }
++mslnk = "=0.1.8"
++winreg = "=0.56.0"
++image = { version = "=0.25.6", default-features = false, features = ["png"] }
++
++[build-dependencies]
++winres = "=0.1.12"
+diff --git a/packaging/setup/src/main.rs b/packaging/setup/src/main.rs
+new file mode 100644
+index 0000000..1934292
+--- /dev/null
++++ b/packaging/setup/src/main.rs
+@@ -0,0 +1,316 @@
++#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
++//! ToneEdit Studio self-contained Rust Windows installer.
++//! The release workflow builds editor and uninstaller first, then embeds both executables.
++use eframe::egui::{self, Color32, RichText};
++use std::fs;
++use std::path::{Path, PathBuf};
++use std::sync::mpsc::{self, Receiver};
++use std::thread;
++use winreg::enums::HKEY_CURRENT_USER;
++use winreg::RegKey;
++
++#[path = "../../../src/gentaro.rs"]
++mod gentaro;
++
++const APP_EXE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/release/toneedit-studio.exe"));
++const UNINSTALL_EXE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/release/toneedit-uninstall.exe"));
++const APP_ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/ToneEdit.ico"));
++const SETUP_ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/ToneEdit-Setup.ico"));
++const UNINSTALL_ICON: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/ToneEdit-Uninstall.ico"));
++const README: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md"));
++const LICENSE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../LICENSE"));
++const COMPONENTS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../COMPONENTS.md"));
++const QA_REPORT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../QA_REPORT.md"));
++const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ToneEditStudio";
++const PRODUCT_MARKER: &str = "ToneEdit Studio 1.2.1";
++
++#[derive(Clone, Copy, PartialEq, Eq)]
++enum Page { Welcome, Options, Installing, Complete }
++
++struct Setup {
++    page: Page,
++    install_to: String,
++    desktop: bool,
++    run_after: bool,
++    error: Option<String>,
++    log: String,
++    result_rx: Option<Receiver<Result<String, String>>>,
++    icon: egui::TextureHandle,
++}
++
++fn main() -> eframe::Result<()> {
++    if std::env::args().any(|arg| arg == "--self-test") {
++        if !APP_EXE.starts_with(b"MZ") || !UNINSTALL_EXE.starts_with(b"MZ") {
++            eprintln!("Embedded executable is not a Windows PE file");
++            std::process::exit(1);
++        }
++        if !APP_ICON.starts_with(&[0, 0, 1, 0]) || !LICENSE.starts_with("MIT License") {
++            eprintln!("Bundled icon or MIT license is invalid");
++            std::process::exit(1);
++        }
++        if image::load_from_memory(include_bytes!("../../../assets/ToneEdit-Setup.png")).is_err() {
++            eprintln!("Embedded installer artwork is invalid");
++            std::process::exit(1);
++        }
++        return Ok(());
++    }
++    let decoded = image::load_from_memory(include_bytes!("../../../assets/ToneEdit-Setup.png"))
++        .expect("Embedded installer artwork is invalid").to_rgba8();
++    let icon = egui::IconData { width: decoded.width(), height: decoded.height(), rgba: decoded.into_raw() };
++    let options = eframe::NativeOptions {
++        renderer: eframe::Renderer::Wgpu,
++        viewport: egui::ViewportBuilder::default().with_title("ToneEdit Studio | Installer")
++            .with_inner_size([820.0, 560.0]).with_min_inner_size([740.0, 500.0])
++            .with_icon(icon),
++        ..Default::default()
++    };
++    eframe::run_native("ToneEdit Studio — Setup", options, Box::new(|cc| {
++        cc.egui_ctx.set_visuals(egui::Visuals::dark());
++        let img = image::load_from_memory(include_bytes!("../../../assets/ToneEdit-Setup.png"))
++            .expect("Embedded installer artwork").to_rgba8();
++        let color = egui::ColorImage::from_rgba_unmultiplied(
++            [img.width() as usize, img.height() as usize], img.as_raw());
++        let icon = cc.egui_ctx.load_texture("installer-icon", color, egui::TextureOptions::LINEAR);
++        Ok(Box::new(Setup { page: Page::Welcome, install_to: default_directory().to_string_lossy().into(),
++            desktop: true, run_after: false, error: None, log: String::new(), result_rx: None, icon }))
++    }))
++}
++fn default_directory() -> PathBuf {
++    std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
++        .unwrap_or_else(std::env::temp_dir).join("Programs").join("ToneEdit Studio")
++}
++fn start_menu_dir() -> Result<PathBuf, String> {
++    Ok(PathBuf::from(std::env::var_os("APPDATA").ok_or("APPDATA not set")?)
++        .join(r"Microsoft\Windows\Start Menu\Programs\ToneEdit Studio"))
++}
++fn desktop_link() -> Option<PathBuf> {
++    std::env::var_os("USERPROFILE")
++        .map(PathBuf::from).map(|p| p.join("Desktop").join("ToneEdit Studio.lnk"))
++}
++
++fn checked_install_path(raw: &str) -> Result<PathBuf, String> {
++    let path = PathBuf::from(raw.trim());
++    let relative = !path.is_absolute();
++    let has_parent_reference = path.components().any(|c| matches!(c, std::path::Component::ParentDir));
++    let unsafe_depth = path.parent().is_none() || path.components().count() < 3;
++    // 日本語の判定規則を実行。失敗時は拒否。Rust側でも安全条件を重ねて検査する。
++    let blocked = gentaro::installer_path_denied(relative, has_parent_reference, unsafe_depth).unwrap_or(true);
++    if relative { return Err("Choose an absolute installation path".into()); }
++    if has_parent_reference {
++        return Err("Parent directory segments are not allowed in the install path".into());
++    }
++    if unsafe_depth {
++        return Err("Refusing to install to the drive root or an unsafe directory".into());
++    }
++    if blocked {
++        return Err("Gentaro policy refused the installation target".into());
++    }
++    Ok(path)
++}
++/// The installer must not overwrite a README, EXE or license belonging to
++/// another program just because a user selected an occupied folder.
++fn validate_install_destination(root: &Path) -> Result<(), String> {
++    if !root.exists() { return Ok(()); }
++    let metadata = fs::symlink_metadata(root).map_err(|e| e.to_string())?;
++    if metadata.file_type().is_symlink() || !metadata.is_dir() {
++        return Err("Installation destination must be a real directory, not a link or file".into());
++    }
++    let mut entries = fs::read_dir(root).map_err(|e| e.to_string())?;
++    if entries.next().is_none() { return Ok(()); }
++    let marker = fs::read_to_string(root.join("toneedit-install.marker"))
++        .map_err(|_| "This folder already contains other files; choose an empty folder or a previous ToneEdit installation".to_owned())?;
++    if marker.trim() != PRODUCT_MARKER && marker.trim() != "ToneEdit Studio 1.2.0" {
++        return Err("The target folder is not an installation of this ToneEdit version; choose an empty folder".into());
++    }
++    Ok(())
++}
++#[cfg(windows)]
++fn atomic_replace(from: &Path, to: &Path) -> std::io::Result<()> {
++    use std::os::windows::ffi::OsStrExt;
++    #[link(name="kernel32")]
++    extern "system" { fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32; }
++    let a: Vec<_> = from.as_os_str().encode_wide().chain(Some(0)).collect();
++    let b: Vec<_> = to.as_os_str().encode_wide().chain(Some(0)).collect();
++    if unsafe { MoveFileExW(a.as_ptr(), b.as_ptr(), 0x1 | 0x8) } == 0 {
++        Err(std::io::Error::last_os_error())
++    } else { Ok(()) }
++}
++fn write_asset(path: &Path, content: &[u8]) -> Result<(), String> {
++    let name = path.file_name().ok_or("Invalid asset path")?.to_string_lossy();
++    let temp = path.with_file_name(format!("{name}.toneedit-pending"));
++    fs::write(&temp, content).map_err(|e| format!("Cannot stage {}: {e}", path.display()))?;
++    #[cfg(windows)]
++    let result = atomic_replace(&temp, path);
++    #[cfg(not(windows))]
++    let result = fs::rename(&temp, path);
++    result.map_err(|e| format!("Cannot install {}: {e} (close the running app first)", path.display()))
++}
++fn shortcut(target: &Path, link: &Path) -> Result<(), String> {
++    let t = target.to_str().ok_or("Non-Unicode application path")?;
++    let l = link.to_str().ok_or("Non-Unicode shortcut path")?;
++    let sl = mslnk::ShellLink::new(t).map_err(|e| format!("Shortcut initialization failed: {e}"))?;
++    sl.create_lnk(l).map_err(|e| format!("Shortcut writing failed: {e}"))
++}
++fn install(root: PathBuf, desktop: bool) -> Result<String, String> {
++    validate_install_destination(&root)?;
++    fs::create_dir_all(&root).map_err(|e| format!("Cannot create destination: {e}"))?;
++    let app = root.join("toneedit-studio.exe");
++    let uninstaller = root.join("toneedit-uninstall.exe");
++    // All program payloads are inside this single installer EXE.
++    for (name, content) in [
++        ("toneedit-studio.exe", APP_EXE),
++        ("toneedit-uninstall.exe", UNINSTALL_EXE),
++        ("ToneEdit.ico", APP_ICON),
++        ("ToneEdit-Setup.ico", SETUP_ICON),
++        ("ToneEdit-Uninstall.ico", UNINSTALL_ICON),
++        ("README.md", README.as_bytes()),
++        ("COMPONENTS.md", COMPONENTS.as_bytes()),
++        ("QA_REPORT.md", QA_REPORT.as_bytes()),
++        ("LICENSE", LICENSE.as_bytes()),
++    ] { write_asset(&root.join(name), content)?; }
++    // Mark an installation as owned only after all payload files were written.
++    write_asset(&root.join("toneedit-install.marker"), format!("{PRODUCT_MARKER}\n").as_bytes())?;
++    let menu = start_menu_dir()?;
++    fs::create_dir_all(&menu).map_err(|e| format!("Could not create Start Menu entries: {e}"))?;
++    shortcut(&app, &menu.join("ToneEdit Studio.lnk"))?;
++    shortcut(&uninstaller, &menu.join("Uninstall ToneEdit Studio.lnk"))?;
++    if desktop {
++        if let Some(link) = desktop_link() {
++            shortcut(&app, &link)?;
++        }
++    }
++    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
++    let (uninstall, _) = hkcu.create_subkey(UNINSTALL_KEY)
++        .map_err(|e| format!("Could not register application: {e}"))?;
++    let install_str = root.to_string_lossy().into_owned();
++    uninstall.set_value("DisplayName", &"ToneEdit Studio").map_err(|e| e.to_string())?;
++    uninstall.set_value("DisplayVersion", &"1.2.1").map_err(|e| e.to_string())?;
++    uninstall.set_value("Publisher", &"ToneEdit Studio contributors").map_err(|e| e.to_string())?;
++    uninstall.set_value("InstallLocation", &install_str).map_err(|e| e.to_string())?;
++    uninstall.set_value("DisplayIcon", &app.to_string_lossy().into_owned()).map_err(|e| e.to_string())?;
++    uninstall.set_value("UninstallString", &format!("\"{}\"", uninstaller.display()))
++        .map_err(|e| e.to_string())?;
++    uninstall.set_value("NoModify", &1_u32).map_err(|e| e.to_string())?;
++    uninstall.set_value("NoRepair", &1_u32).map_err(|e| e.to_string())?;
++    Ok(format!("Installation completed. Files installed to {}", root.display()))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn rejects_populated_foreign_directory_and_accepts_owned_one() {
++        let folder = std::env::temp_dir().join(format!("toneedit-install-test-{}", std::process::id()));
++        let _ = fs::remove_dir_all(&folder);
++        fs::create_dir(&folder).unwrap();
++        assert!(validate_install_destination(&folder).is_ok());
++        fs::write(folder.join("README.md"), "Do not overwrite this file").unwrap();
++        assert!(validate_install_destination(&folder).is_err());
++        fs::write(folder.join("toneedit-install.marker"), format!("{PRODUCT_MARKER}\n")).unwrap();
++        assert!(validate_install_destination(&folder).is_ok());
++        fs::remove_dir_all(folder).unwrap();
++    }
++}
++
++impl eframe::App for Setup {
++    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
++        if let Some(rx) = &self.result_rx {
++            if let Ok(result) = rx.try_recv() {
++                match result {
++                    Ok(message) => { self.log = message; self.page = Page::Complete; }
++                    Err(err) => { self.error = Some(err); self.page = Page::Options; }
++                }
++                self.result_rx = None;
++            }
++        }
++        egui::CentralPanel::default().frame(egui::Frame::default()
++            .fill(Color32::from_rgb(10, 14, 31)).inner_margin(egui::Margin::same(22)))
++            .show(ctx, |ui| {
++            ui.horizontal(|ui| {
++                ui.image((self.icon.id(), egui::vec2(112., 112.)));
++                ui.vertical(|ui| {
++                    ui.add_space(12.);
++                    ui.label(RichText::new("ToneEdit Studio").size(36.).strong()
++                        .color(Color32::from_rgb(90, 205, 255)));
++                    ui.label(RichText::new("ULTIMATE  ·  RUST NATIVE  ·  MULTI-AI")
++                        .size(15.).strong().color(Color32::from_rgb(177, 150, 250)));
++                    ui.label("Standalone editor + multi-vendor AI chat + secure connections");
++                });
++            });
++            ui.add_space(14.);
++            ui.separator();
++            ui.add_space(12.);
++            match self.page {
++                Page::Welcome => {
++                    ui.heading("Welcome / インストールへようこそ");
++                    ui.add_space(9.);
++                    ui.label("This wizard installs ToneEdit Studio, including its integrated AI chat and uninstaller.");
++                    ui.label("The installer embeds all program executables, icons and documentation.");
++                    ui.label("Your Google/vendor passwords are NOT required for installation.");
++                    ui.label(RichText::new("100% FREE / 完全無料 ・ MIT open source ・ No ads / No license activation").color(Color32::from_rgb(121, 228, 195)));
++                    ui.add_space(14.);
++                    ui.label(RichText::new("No administrator privileges required · Windows 10 / 11 · No telemetry")
++                        .color(Color32::from_rgb(121, 228, 195)));
++                    if ui.button("Continue →").clicked() { self.page = Page::Options; }
++                }
++                Page::Options => {
++                    ui.heading("Installation options / インストール設定");
++                    ui.label("Installation directory:");
++                    ui.add(egui::TextEdit::singleline(&mut self.install_to).desired_width(f32::INFINITY));
++                    ui.checkbox(&mut self.desktop, "Create desktop shortcut");
++                    ui.checkbox(&mut self.run_after, "Launch ToneEdit Studio after setup");
++                    ui.add_space(10.);
++                    if ui.button("Install ToneEdit Studio").clicked() {
++                        match checked_install_path(&self.install_to) {
++                            Ok(root) => {
++                                self.error = None; self.page = Page::Installing;
++                                let (tx,rx) = mpsc::channel();
++                                self.result_rx = Some(rx);
++                                let desktop = self.desktop;
++                                thread::spawn(move || { let _ = tx.send(install(root,desktop)); });
++                            }
++                            Err(e) => self.error = Some(e),
++                        }
++                    }
++                }
++                Page::Installing => {
++                    ui.heading("Installing / ファイルを展開中");
++                    ui.spinner();
++                    ui.label("Writing application binaries, creating shortcuts and registering uninstall information...");
++                }
++                Page::Complete => {
++                    ui.heading("Installation successful / インストール完了");
++                    ui.label(RichText::new("✓ ToneEdit Studio is ready").size(22.)
++                        .color(Color32::from_rgb(106, 226, 171)));
++                    ui.label(&self.log);
++                    ui.add_space(9.);
++                    if ui.button("Launch ToneEdit Studio").clicked() {
++                        let app = PathBuf::from(&self.install_to).join("toneedit-studio.exe");
++                        match std::process::Command::new(&app).spawn() {
++                            Ok(_) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
++                            Err(e) => self.error = Some(format!("Could not launch: {e}")),
++                        }
++                    }
++                    if self.run_after {
++                        self.run_after = false;
++                        let app = PathBuf::from(&self.install_to).join("toneedit-studio.exe");
++                        if let Err(e) = std::process::Command::new(&app).spawn() {
++                            self.error = Some(format!("Could not launch: {e}"));
++                        }
++                    }
++                    if ui.button("Finish").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
++                }
++            }
++            if let Some(error) = &self.error {
++                ui.add_space(14.);
++                ui.colored_label(Color32::LIGHT_RED, format!("Error: {error}"));
++                ui.label("Existing documents and chat data were not deleted.");
++            }
++            ui.add_space(20.);
++            ui.separator();
++            ui.label(RichText::new("ToneEdit Studio 1.2.1  |  FREE · No ads · No license activation  |  MIT License")
++                .small().weak());
++        });
++        ctx.request_repaint_after(std::time::Duration::from_millis(250));
++    }
++}
+diff --git a/packaging/uninstall/Cargo.toml b/packaging/uninstall/Cargo.toml
+new file mode 100644
+index 0000000..09a2f9e
+--- /dev/null
++++ b/packaging/uninstall/Cargo.toml
+@@ -0,0 +1,14 @@
++[package]
++name = "toneedit-uninstall"
++version = "1.2.1"
++edition = "2021"
++build = "build.rs"
++license = "MIT"
++
++[dependencies]
++eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu"] }
++winreg = "=0.56.0"
++keyring = "=3.6.2"
++
++[build-dependencies]
++winres = "=0.1.12"
+diff --git a/packaging/uninstall/src/main.rs b/packaging/uninstall/src/main.rs
+new file mode 100644
+index 0000000..d46c047
+--- /dev/null
++++ b/packaging/uninstall/src/main.rs
+@@ -0,0 +1,191 @@
++#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
++//! ToneEdit Studio Rust uninstaller; preserves user documents and chat data unless opted out.
++use eframe::egui::{self, Color32, RichText};
++use std::fs;
++use std::path::{Path, PathBuf};
++use std::sync::mpsc::{self, Receiver};
++use std::thread;
++use winreg::enums::HKEY_CURRENT_USER;
++use winreg::RegKey;
++
++#[path = "../../../src/gentaro.rs"]
++mod gentaro;
++
++const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ToneEditStudio";
++const PRODUCT_MARKER: &str = "ToneEdit Studio 1.2.1";
++
++fn main() -> eframe::Result<()> {
++    if std::env::args().any(|arg| arg == "--self-test") {
++        if PRODUCT_MARKER.trim().is_empty() || !KEY.ends_with("ToneEditStudio") {
++            std::process::exit(1);
++        }
++        return Ok(());
++    }
++    // The installed uninstaller makes a temporary copy before removing its own directory.
++    if !std::env::args().any(|a| a == "--worker") {
++        if let Err(err) = launch_from_temp() {
++            eprintln!("Could not start ToneEdit uninstaller: {err}");
++        } else { return Ok(()); }
++    }
++    let options = eframe::NativeOptions {
++        renderer: eframe::Renderer::Wgpu,
++        viewport: egui::ViewportBuilder::default().with_title("ToneEdit Studio | Uninstall")
++            .with_inner_size([650., 360.]),
++        ..Default::default()
++    };
++    eframe::run_native("ToneEdit Studio — Uninstall", options, Box::new(|cc| {
++        cc.egui_ctx.set_visuals(egui::Visuals::dark());
++        Ok(Box::<Uninstaller>::default())
++    }))
++}
++fn launch_from_temp() -> Result<(), String> {
++    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
++    let unique = format!("toneedit-uninstaller-{}-{}.exe", std::process::id(),
++        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
++            .unwrap_or_default().as_secs());
++    let temp = std::env::temp_dir().join(unique);
++    fs::copy(exe, &temp).map_err(|e| format!("Cannot create temporary uninstaller copy: {e}"))?;
++    std::process::Command::new(temp).arg("--worker").spawn()
++        .map_err(|e| format!("Cannot run uninstaller: {e}"))?;
++    Ok(())
++}
++
++#[derive(Default)]
++struct Uninstaller {
++    remove_settings: bool,
++    started: bool,
++    result_rx: Option<Receiver<Result<String, String>>>,
++    finished: bool,
++    message: String,
++}
++
++fn uninstall(remove_settings: bool) -> Result<String, String> {
++    let registry = RegKey::predef(HKEY_CURRENT_USER);
++    let key = registry.open_subkey(KEY).map_err(|e| format!("Installation record not found: {e}"))?;
++    let location: String = key.get_value("InstallLocation")
++        .map_err(|e| format!("Install path not recorded: {e}"))?;
++    let folder = PathBuf::from(&location);
++    if !folder.is_absolute() || folder.components().count() < 3 {
++        return Err("Unsafe installation path; refusing to remove files".into());
++    }
++    let metadata = fs::symlink_metadata(&folder)
++        .map_err(|e| format!("Cannot inspect installation directory: {e}"))?;
++    if metadata.file_type().is_symlink() || !metadata.is_dir() {
++        return Err("Installation folder must be a real directory; refusing to follow links".into());
++    }
++    let marker = folder.join("toneedit-install.marker");
++    let content = fs::read_to_string(&marker)
++        .map_err(|_| "ToneEdit product marker missing; refusing to delete unknown folder".to_owned())?;
++    let marker_valid = content.trim() == PRODUCT_MARKER || content.trim() == "ToneEdit Studio 1.2.0";
++    if !marker_valid {
++        return Err("Product marker did not match; uninstall was aborted".into());
++    }
++    if !gentaro::uninstallation_allowed(marker_valid, folder.is_absolute() && folder.components().count() >= 3)
++        .unwrap_or(false) {
++        return Err("Gentaro safety policy blocked this uninstall".into());
++    }
++    // Remove only known filenames. Never recursively erase a user-selected folder.
++    for name in ["toneedit-studio.exe", "toneedit-uninstall.exe", "ToneEdit.ico",
++        "ToneEdit-Setup.ico", "ToneEdit-Uninstall.ico", "README.md", "COMPONENTS.md", "QA_REPORT.md", "LICENSE", "toneedit-install.marker"] {
++        let path = folder.join(name);
++        if path.is_file() { fs::remove_file(&path).map_err(|e| format!("Cannot remove {}: {e}. Close ToneEdit Studio and retry.",path.display()))?; }
++    }
++    // Leave any unknown files in the directory untouched.
++    let _ = fs::remove_dir(&folder);
++    if let Some(appdata) = std::env::var_os("APPDATA") {
++        let start = PathBuf::from(&appdata)
++            .join(r"Microsoft\Windows\Start Menu\Programs\ToneEdit Studio");
++        for file in ["ToneEdit Studio.lnk", "Uninstall ToneEdit Studio.lnk"] {
++            let _ = fs::remove_file(start.join(file));
++        }
++        let _ = fs::remove_dir(&start);
++        if remove_settings {
++            let data = PathBuf::from(appdata).join("ToneEditStudio");
++            if data.is_dir() { fs::remove_dir_all(&data)
++                .map_err(|e| format!("Program removed; settings removal failed: {e}"))?; }
++        }
++    }
++    if let Some(profile) = std::env::var_os("USERPROFILE") {
++        let desktop = PathBuf::from(profile).join("Desktop").join("ToneEdit Studio.lnk");
++        let _ = fs::remove_file(desktop);
++    }
++    if remove_settings { remove_secrets(); }
++    registry.delete_subkey(KEY).map_err(|e| format!("Program files removed, but registry cleanup failed: {e}"))?;
++    schedule_temp_cleanup();
++    Ok(if remove_settings {
++        "ToneEdit Studio, application settings and stored API credentials were removed. External documents were preserved.".into()
++    } else {
++        "ToneEdit Studio application files were removed. Chat history, settings and API keys were preserved for reinstall. External documents were not touched.".into()
++    })
++}
++fn remove_secrets() {
++    for vendor in ["openai", "anthropic", "gemini", "xai", "deepseek", "mistral", "groq",
++        "openrouter", "together", "perplexity", "ollama", "custom"] {
++        if let Ok(entry) = keyring::Entry::new("ToneEdit Studio", &format!("provider.{vendor}.api_key")) {
++            let _ = entry.delete_credential();
++        }
++    }
++    for name in ["google.oauth.tokens", "google.oauth.client_secret"] {
++        if let Ok(entry) = keyring::Entry::new("ToneEdit Studio", name) {
++            let _ = entry.delete_credential();
++        }
++    }
++}
++fn schedule_temp_cleanup() {
++    // Windows cannot delete an executing EXE immediately. Try to delete temporary copy on reboot.
++    #[cfg(windows)] {
++        use std::os::windows::ffi::OsStrExt;
++        #[link(name="kernel32")]
++        extern "system" { fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32; }
++        if let Ok(path) = std::env::current_exe() {
++            if path.starts_with(std::env::temp_dir()) {
++                let wide: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
++                let _ = unsafe { MoveFileExW(wide.as_ptr(), std::ptr::null(), 0x4) };
++            }
++        }
++    }
++}
++
++impl eframe::App for Uninstaller {
++    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
++        if let Some(rx) = &self.result_rx {
++            if let Ok(outcome) = rx.try_recv() {
++                self.finished = true;
++                self.message = match outcome { Ok(msg) => msg, Err(e) => format!("Uninstall error: {e}") };
++                self.result_rx = None;
++            }
++        }
++        egui::CentralPanel::default().frame(egui::Frame::default()
++            .fill(Color32::from_rgb(11, 17, 32)).inner_margin(egui::Margin::same(22)))
++            .show(ctx, |ui| {
++            ui.heading(RichText::new("ToneEdit Studio — UNINSTALL")
++                .color(Color32::from_rgb(118, 180, 252)));
++            ui.separator();
++            if !self.started {
++                ui.label("Do you want to remove ToneEdit Studio from this computer?");
++                ui.label("Installed app and Start Menu entries will be removed.");
++                ui.add_space(13.);
++                ui.checkbox(&mut self.remove_settings,
++                    "Also delete local settings, chat history, Google tokens and stored AI API keys");
++                ui.label(RichText::new("Default: preserve your settings and chat history for possible reinstallation. Never deletes source documents.")
++                    .small().weak());
++                ui.add_space(20.);
++                if ui.button("Uninstall ToneEdit Studio").clicked() {
++                    self.started = true;
++                    let remove_settings = self.remove_settings;
++                    let (tx,rx) = mpsc::channel();
++                    self.result_rx = Some(rx);
++                    thread::spawn(move || { let _ = tx.send(uninstall(remove_settings)); });
++                }
++                if ui.button("Cancel").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
++            } else if !self.finished {
++                ui.spinner();
++                ui.label("Removing installed files and registration...");
++            } else {
++                ui.label(&self.message);
++                if ui.button("Close").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
++            }
++        });
++        ctx.request_repaint_after(std::time::Duration::from_millis(250));
++    }
++}
+diff --git a/src/ai.rs b/src/ai.rs
+new file mode 100644
+index 0000000..03ea576
+--- /dev/null
++++ b/src/ai.rs
+@@ -0,0 +1,584 @@
++//! Vendor-neutral, text-only AI chat. No bundled identity, system persona, passwords or API keys.
++//! API keys/tokens reside in the operating system credential vault via `keyring`.
++use eframe::egui::{self, Color32, RichText};
++use serde::{Deserialize, Serialize};
++use serde_json::{json, Value};
++use std::path::PathBuf;
++use std::io::Read;
++use std::sync::mpsc::{self, Receiver, Sender};
++use std::thread;
++use std::time::Duration;
++
++use crate::google_oauth::{self, GoogleLoginResult};
++mod providers;
++
++const SERVICE: &str = "ToneEdit Studio";
++const MAX_MESSAGE_BYTES: usize = 64 * 1024;
++const MAX_REPLY_BYTES: usize = 2 * 1024 * 1024;
++
++#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
++pub enum Vendor {
++    OpenAi, Anthropic, Gemini, XAi, DeepSeek, Mistral, Groq, OpenRouter,
++    Together, Perplexity, Ollama, Custom,
++}
++impl Vendor {
++    pub const ALL: [Self; 12] = [Self::OpenAi, Self::Anthropic, Self::Gemini, Self::XAi,
++        Self::DeepSeek, Self::Mistral, Self::Groq, Self::OpenRouter,
++        Self::Together, Self::Perplexity, Self::Ollama, Self::Custom];
++    pub fn label(self) -> &'static str {
++        match self { Self::OpenAi => "OpenAI", Self::Anthropic => "Anthropic Claude",
++            Self::Gemini => "Google Gemini", Self::XAi => "xAI Grok",
++            Self::DeepSeek => "DeepSeek", Self::Mistral => "Mistral",
++            Self::Groq => "Groq", Self::OpenRouter => "OpenRouter",
++            Self::Together => "Together AI", Self::Perplexity => "Perplexity",
++            Self::Ollama => "Ollama (local)", Self::Custom => "Custom OpenAI-compatible" }
++    }
++    pub fn id(self) -> &'static str {
++        match self { Self::OpenAi => "openai", Self::Anthropic => "anthropic",
++            Self::Gemini => "gemini", Self::XAi => "xai", Self::DeepSeek => "deepseek",
++            Self::Mistral => "mistral", Self::Groq => "groq", Self::OpenRouter => "openrouter",
++            Self::Together => "together", Self::Perplexity => "perplexity",
++            Self::Ollama => "ollama", Self::Custom => "custom" }
++    }
++    pub fn default_model(self) -> &'static str {
++        match self { Self::OpenAi => "gpt-4.1-mini", Self::Anthropic => "claude-sonnet-4-5",
++            Self::Gemini => "gemini-2.5-flash", Self::XAi => "grok-3-mini",
++            Self::DeepSeek => "deepseek-chat", Self::Mistral => "mistral-small-latest",
++            Self::Groq => "llama-3.3-70b-versatile", Self::OpenRouter => "openai/gpt-4.1-mini",
++            Self::Together => "meta-llama/Llama-3.3-70B-Instruct-Turbo",
++            Self::Perplexity => "sonar", Self::Ollama => "llama3.2", Self::Custom => "my-model" }
++    }
++    pub fn default_endpoint(self) -> &'static str {
++        match self {
++            Self::OpenAi => "https://api.openai.com/v1/chat/completions",
++            Self::Anthropic => "https://api.anthropic.com/v1/messages",
++            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta",
++            Self::XAi => "https://api.x.ai/v1/chat/completions",
++            Self::DeepSeek => "https://api.deepseek.com/chat/completions",
++            Self::Mistral => "https://api.mistral.ai/v1/chat/completions",
++            Self::Groq => "https://api.groq.com/openai/v1/chat/completions",
++            Self::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
++            Self::Together => "https://api.together.xyz/v1/chat/completions",
++            Self::Perplexity => "https://api.perplexity.ai/chat/completions",
++            Self::Ollama => "http://127.0.0.1:11434/v1/chat/completions",
++            Self::Custom => "https://example.invalid/v1/chat/completions",
++        }
++    }
++    pub fn requires_key(self) -> bool {
++        crate::gentaro::api_key_required(self.id()).unwrap_or(!matches!(self, Self::Ollama))
++    }
++}
++
++#[derive(Clone, Debug, Serialize, Deserialize)]
++pub struct Message { pub role: String, pub content: String }
++#[derive(Clone, Debug, Serialize, Deserialize)]
++pub struct Conversation {
++    id: u64,
++    title: String,
++    provider: Vendor,
++    model: String,
++    #[serde(default)]
++    endpoint: Option<String>,
++    messages: Vec<Message>,
++}
++#[derive(Serialize, Deserialize)]
++#[serde(default)]
++struct ChatFile {
++    vendor: Vendor,
++    model: String,
++    custom_url: String,
++    google_oauth_client_id: String,
++    system_instructions: String,
++    conversations: Vec<Conversation>,
++    current: u64,
++    next_id: u64,
++    // Account identifiers, passwords, access tokens and API keys are deliberately absent.
++}
++impl Default for ChatFile {
++    fn default() -> Self { Self {
++        vendor: Vendor::OpenAi, model: Vendor::OpenAi.default_model().into(),
++        custom_url: Vendor::Custom.default_endpoint().into(), google_oauth_client_id: String::new(),
++        system_instructions: String::new(), conversations: vec![], current: 0, next_id: 1,
++    } }
++}
++struct Reply { id: u64, text: Result<String, String> }
++
++pub struct AiWorkspace {
++    pub visible: bool,
++    pub settings_open: bool,
++    data: ChatFile,
++    path: PathBuf,
++    prompt: String,
++    api_key_input: String,
++    google_client_secret_input: String,
++    status: String,
++    pending: Option<u64>,
++    tx: Sender<Reply>,
++    rx: Receiver<Reply>,
++    google_tx: Sender<GoogleLoginResult>,
++    google_rx: Receiver<GoogleLoginResult>,
++    google_status: String,
++    delete_confirm: Option<u64>,
++}
++
++impl AiWorkspace {
++    pub fn new() -> Self {
++        let mut path = super::default_state_path();
++        path.set_file_name("ai_chat.json");
++        let data = std::fs::read_to_string(&path).ok()
++            .and_then(|s| serde_json::from_str::<ChatFile>(&s).ok()).unwrap_or_default();
++        let (tx, rx) = mpsc::channel();
++        let (google_tx, google_rx) = mpsc::channel();
++        Self { visible: false, settings_open: false, data, path,
++            prompt: String::new(), api_key_input: String::new(),
++            google_client_secret_input: String::new(), status: String::new(),
++            pending: None, tx, rx, google_tx, google_rx,
++            google_status: "Google account is not signed in for this session".into(),
++            delete_confirm: None }
++    }
++    fn save(&mut self) {
++        if let Ok(content) = serde_json::to_string_pretty(&self.data) {
++            if let Err(e) = super::document::save_state(&self.path, &content) {
++                self.status = format!("Chat history save failed: {e}");
++            }
++        }
++    }
++    fn create_chat(&mut self) {
++        let id = self.data.next_id;
++        self.data.next_id += 1;
++        self.data.conversations.push(Conversation { id, title: "New conversation".into(),
++            provider: self.data.vendor, model: self.data.model.clone(),
++            endpoint: None, messages: vec![] });
++        self.data.current = id;
++        self.save();
++    }
++    fn active_chat(&self) -> Option<&Conversation> {
++        self.data.conversations.iter().find(|c| c.id == self.data.current)
++    }
++    fn active_chat_mut(&mut self) -> Option<&mut Conversation> {
++        self.data.conversations.iter_mut().find(|c| c.id == self.data.current)
++    }
++    fn provider_secret(&self) -> Result<String, String> {
++        if !self.data.vendor.requires_key() { return Ok(String::new()); }
++        credential_entry(self.data.vendor).and_then(|e| e.get_password().map_err(|e| format!("Credential not available: {e}")))
++    }
++    fn send(&mut self) {
++        let in_flight = self.pending.is_some();
++        let empty = self.prompt.trim().is_empty();
++        let too_large = self.prompt.len() > MAX_MESSAGE_BYTES;
++        if crate::gentaro::reject_ai_send(in_flight, empty, too_large)
++            .unwrap_or(in_flight || empty || too_large) {
++            if !in_flight && !empty && too_large { self.status = "Prompt exceeds 64 KiB limit".into(); }
++            return;
++        }
++        let key = match self.provider_secret() {
++            Ok(k) => k,
++            Err(e) => { self.status = format!("Set an API key in AI > Connections. {e}"); self.settings_open = true; return; }
++        };
++        let vendor = self.data.vendor;
++        let model = self.data.model.trim().to_string();
++        if model.is_empty() { self.status = "Set a model name in Connections".into(); return; }
++        let endpoint = if vendor == Vendor::Custom { self.data.custom_url.trim().to_owned() }
++                       else { vendor.default_endpoint().to_owned() };
++        if let Err(e) = validate_endpoint(vendor, &endpoint) { self.status = e; return; }
++        if self.active_chat().is_some_and(|c| c.messages.len() >= 100 && c.provider == vendor) {
++            self.status = "Conversation limit reached (100 messages). Start a new chat.".into();
++            return;
++        }
++        // A provider change is a new conversation. Never silently send a previous
++        // provider's chat history to a different vendor.
++        if self.active_chat().is_some_and(|c| {
++            let has_history = !c.messages.is_empty();
++            let provider_changed = c.provider != vendor;
++            let endpoint_changed = vendor == Vendor::Custom && c.endpoint.as_deref() != Some(endpoint.as_str());
++            crate::gentaro::split_conversation(has_history, provider_changed, endpoint_changed)
++                .unwrap_or(has_history && (provider_changed || endpoint_changed))
++        }) {
++            self.create_chat();
++            self.status = "Destination changed: started a separate conversation to protect history.".into();
++        }
++        if self.active_chat().is_none() { self.create_chat(); }
++        let prompt = self.prompt.trim().to_owned();
++        let instruction = self.data.system_instructions.clone();
++        let chat = self.active_chat_mut().expect("chat created");
++        chat.provider = vendor;
++        chat.model = model.clone();
++        chat.endpoint = if vendor == Vendor::Custom { Some(endpoint.clone()) } else { None };
++        if chat.messages.is_empty() { chat.title = prompt.chars().take(45).collect(); }
++        chat.messages.push(Message { role: "user".into(), content: prompt });
++        let messages = chat.messages.clone();
++        let id = chat.id;
++        self.pending = Some(id);
++        self.status = "Sending only this conversation to the selected AI provider...".into();
++        self.prompt.clear();
++        self.save();
++        let sender = self.tx.clone();
++        thread::spawn(move || {
++            let result = request_chat(vendor, &endpoint, &model, &key, &instruction, &messages);
++            let _ = sender.send(Reply { id, text: result });
++        });
++    }
++    fn attach_text_file(&mut self) {
++        let Some(path) = rfd::FileDialog::new().set_title("Attach text file to the draft (not sent automatically)").pick_file() else {
++            return;
++        };
++        match std::fs::metadata(&path) {
++            Ok(metadata) if metadata.len() <= 24 * 1024 => {
++                match super::document::load(&path) {
++                    Ok(decoded) => {
++                        let label = path.file_name().unwrap_or_default().to_string_lossy();
++                        let snippet = format!("\n\nAttached text file: {label}\n```text\n{}\n```\n", decoded.text);
++                        if self.prompt.len() + snippet.len() > MAX_MESSAGE_BYTES {
++                            self.status = "Attachment would exceed 64 KiB prompt limit".into();
++                        } else {
++                            self.prompt.push_str(&snippet);
++                            self.status = "File inserted into draft. Review before pressing Send.".into();
++                        }
++                    }
++                    Err(e) => self.status = format!("Could not read attachment: {e}"),
++                }
++            }
++            Ok(_) => self.status = "Text attachments are limited to 24 KiB".into(),
++            Err(e) => self.status = format!("Could not inspect selected file: {e}"),
++        }
++    }
++    fn export_conversation(&mut self) {
++        let Some(chat) = self.active_chat() else {
++            self.status = "No conversation selected".into(); return;
++        };
++        let mut markdown = format!("# {}\n\nProvider: {}\nModel: {}\n\n",
++            chat.title, chat.provider.label(), chat.model);
++        for msg in &chat.messages {
++            markdown.push_str(&format!("## {}\n\n{}\n\n", msg.role, msg.content));
++        }
++        let Some(path) = rfd::FileDialog::new().set_title("Export AI chat as Markdown")
++            .set_file_name("toneedit-chat.md").save_file() else { return; };
++        self.status = match std::fs::write(path, markdown) {
++            Ok(()) => "Conversation exported".into(),
++            Err(e) => format!("Could not export chat: {e}"),
++        };
++    }
++    pub fn poll(&mut self) {
++        while let Ok(reply) = self.rx.try_recv() {
++            if self.pending != Some(reply.id) { continue; }
++            self.pending = None;
++            match reply.text {
++                Ok(content) => {
++                    if let Some(c) = self.data.conversations.iter_mut().find(|c| c.id == reply.id) {
++                        c.messages.push(Message { role: "assistant".into(), content });
++                    }
++                    self.status = "Answer received".into();
++                    self.save();
++                }
++                Err(e) => self.status = e,
++            }
++        }
++        while let Ok(response) = self.google_rx.try_recv() {
++            match response {
++                Ok(email) => self.google_status = format!("Connected to Google: {email}"),
++                Err(err) => self.google_status = format!("Google sign-in failed: {err}"),
++            }
++        }
++    }
++    pub fn show(&mut self, ctx: &egui::Context) -> Option<String> {
++        if !self.visible { return None; }
++        let mut insert = None;
++        egui::SidePanel::right("toneedit-ai-chat").resizable(true)
++            .default_width(465.0).min_width(300.0).show(ctx, |ui| {
++            ui.horizontal(|ui| {
++                ui.heading("AI CHAT");
++                if ui.small_button("Connections").clicked() { self.settings_open = true; }
++                if ui.small_button("×").clicked() { self.visible = false; }
++            });
++            ui.label(RichText::new("No fixed persona. Each provider uses its own API and billing.").small().weak());
++            ui.horizontal(|ui| {
++                egui::ComboBox::from_id_salt("ai_provider")
++                    .selected_text(self.data.vendor.label()).show_ui(ui, |ui| {
++                        for vendor in Vendor::ALL {
++                            if ui.selectable_value(&mut self.data.vendor, vendor, vendor.label()).changed() {
++                                self.data.model = vendor.default_model().into(); self.save();
++                            }
++                        }
++                    });
++                if ui.button("+ New").clicked() { self.create_chat(); }
++            });
++            ui.horizontal(|ui| {
++                ui.label("Model");
++                if ui.text_edit_singleline(&mut self.data.model).changed() { self.save(); }
++            });
++            ui.separator();
++            ui.collapsing("Conversations", |ui| {
++                let items: Vec<(u64, String)> = self.data.conversations.iter().rev()
++                    .map(|c| (c.id, c.title.clone())).collect();
++                for (id, title) in items {
++                    ui.horizontal(|ui| {
++                        if ui.selectable_label(self.data.current == id, title).clicked() {
++                            self.data.current = id;
++                            if let Some((vendor, model, endpoint)) = self.active_chat()
++                                .map(|c| (c.provider, c.model.clone(), c.endpoint.clone())) {
++                                self.data.vendor = vendor;
++                                self.data.model = model;
++                                if vendor == Vendor::Custom {
++                                    if let Some(endpoint) = endpoint { self.data.custom_url = endpoint; }
++                                }
++                            }
++                            self.save();
++                        }
++                        if ui.small_button("Delete").clicked() { self.delete_confirm = Some(id); }
++                    });
++                }
++            });
++            if ui.button("Export selected conversation (.md)").clicked() { self.export_conversation(); }
++            ui.separator();
++            let newest = self.active_chat().and_then(|chat| chat.messages.last())
++                .filter(|m| m.role == "assistant").map(|m| m.content.clone());
++            ui.horizontal(|ui| {
++                if let Some(reply) = &newest {
++                    if ui.button("Insert answer into editor").clicked() { insert = Some(reply.clone()); }
++                    if ui.button("Copy answer").clicked() { ui.ctx().copy_text(reply.clone()); }
++                }
++            });
++            egui::ScrollArea::vertical().id_salt("chat-messages").stick_to_bottom(true)
++                .max_height((ui.available_height() - 180.0).max(150.0)).show(ui, |ui| {
++                if let Some(chat) = self.active_chat() {
++                    for msg in &chat.messages {
++                        let (label, color) = if msg.role == "user" {
++                            ("YOU", Color32::from_rgb(114, 192, 245))
++                        } else { ("ASSISTANT", Color32::from_rgb(187, 155, 255)) };
++                        ui.label(RichText::new(label).strong().color(color));
++                        ui.label(&msg.content);
++                        ui.add_space(10.0);
++                        ui.separator();
++                    }
++                }
++            });
++            ui.separator();
++            ui.add(egui::TextEdit::multiline(&mut self.prompt)
++                .hint_text("Ask a question. Only send when you click Send.")
++                .desired_rows(4).desired_width(f32::INFINITY));
++            ui.horizontal(|ui| {
++                if ui.button("Attach text...").clicked() { self.attach_text_file(); }
++                if self.pending.is_some() { ui.spinner(); }
++                if ui.add_enabled(self.pending.is_none() && !self.prompt.trim().is_empty(),
++                    egui::Button::new("Send message")).clicked() { self.send(); }
++                ui.label(RichText::new(format!("{} / 65536 bytes", self.prompt.len())).small().weak());
++            });
++            if !self.status.is_empty() { ui.label(RichText::new(&self.status).small().color(Color32::LIGHT_YELLOW)); }
++            ui.label(RichText::new("Chats are kept locally as plaintext; API keys are in OS credentials. No analytics.")
++                .small().weak());
++        });
++        insert
++    }
++    pub fn settings_ui(&mut self, ctx: &egui::Context) {
++        if !self.settings_open { return; }
++        let mut open = self.settings_open;
++        egui::Window::new("AI Connections — ToneEdit Studio")
++            .open(&mut open).min_width(560.0).default_width(620.0).show(ctx, |ui| {
++            ui.heading("AI providers / API credentials");
++            ui.label("Select a vendor and model. Enter an API key provided by that vendor.");
++            egui::ComboBox::from_id_salt("settings_vendor")
++                .selected_text(self.data.vendor.label()).show_ui(ui, |ui| {
++                    for vendor in Vendor::ALL {
++                        if ui.selectable_value(&mut self.data.vendor, vendor, vendor.label()).changed() {
++                            self.data.model = vendor.default_model().into(); self.save();
++                        }
++                    }
++                });
++            ui.horizontal(|ui| { ui.label("Model name:"); ui.text_edit_singleline(&mut self.data.model); });
++            if self.data.vendor == Vendor::Custom {
++                ui.label("Custom HTTPS chat-completions URL:");
++                ui.text_edit_singleline(&mut self.data.custom_url);
++                ui.label(RichText::new("A custom server receives your API key and messages. Only use trusted HTTPS servers.").small().weak());
++            }
++            ui.label(format!("Endpoint: {}", if self.data.vendor == Vendor::Custom {
++                self.data.custom_url.as_str() } else { self.data.vendor.default_endpoint() }));
++            if self.data.vendor.requires_key() {
++                ui.separator();
++                ui.label("API key (stored in operating-system credential manager, not chat history):");
++                ui.add(egui::TextEdit::singleline(&mut self.api_key_input).password(true).desired_width(400.0));
++                ui.horizontal(|ui| {
++                    if ui.button("Save API key").clicked() {
++                        let key = self.api_key_input.trim();
++                        if key.is_empty() { self.status = "Please enter an API key".into(); }
++                        else {
++                            self.status = match credential_entry(self.data.vendor)
++                                .and_then(|entry| entry.set_password(key).map_err(|e| e.to_string())) {
++                                Ok(()) => "API key stored securely".into(),
++                                Err(e) => format!("Could not store API key: {e}"),
++                            };
++                            self.api_key_input.clear();
++                        }
++                    }
++                    if ui.button("Remove saved API key").clicked() {
++                        self.status = match credential_entry(self.data.vendor)
++                            .and_then(|entry| entry.delete_credential().map_err(|e| e.to_string())) {
++                            Ok(()) => "API key removed".into(), Err(e) => format!("Removal: {e}"),
++                        };
++                        self.api_key_input.clear();
++                    }
++                });
++            } else { ui.label("Local Ollama does not require a cloud API key."); }
++            ui.separator();
++            ui.heading("Optional instructions");
++            ui.label("Empty by default. No user persona or built-in identity profile.");
++            ui.add(egui::TextEdit::multiline(&mut self.data.system_instructions).desired_rows(3));
++            ui.separator();
++            ui.heading("Google account (OAuth 2.0 + PKCE)");
++            ui.label("Google login is separate from Gemini API keys. No Google password is collected.");
++            ui.label("Google Cloud desktop OAuth client ID (provided by the user):");
++            ui.text_edit_singleline(&mut self.data.google_oauth_client_id);
++            ui.label("Google desktop OAuth client secret (if required, kept in OS vault):");
++            ui.add(egui::TextEdit::singleline(&mut self.google_client_secret_input).password(true));
++            if ui.button("Save OAuth client secret").clicked() {
++                self.google_status = match google_oauth::save_client_secret(&self.google_client_secret_input) {
++                    Ok(()) => "Google OAuth client secret saved to OS credentials".into(),
++                    Err(e) => e,
++                };
++                self.google_client_secret_input.clear();
++            }
++            ui.horizontal(|ui| {
++                if ui.button("Sign in with Google").clicked() {
++                    let result = google_oauth::start(&self.data.google_oauth_client_id, self.google_tx.clone());
++                    match result {
++                        Ok(url) => {
++                            ctx.open_url(egui::OpenUrl { url, new_tab: true });
++                            self.google_status = "Waiting for Google authorization in browser...".into();
++                        }
++                        Err(e) => self.google_status = e,
++                    }
++                }
++                if ui.button("Disconnect Google").clicked() {
++                    self.google_status = match google_oauth::disconnect() {
++                        Ok(()) => "Google token removed from credential store".into(),
++                        Err(e) => e,
++                    };
++                }
++            });
++            ui.label(RichText::new(&self.google_status).small());
++            ui.separator();
++            if ui.button("Save non-secret connection preferences").clicked() {
++                self.save(); self.status = "Connection preferences saved".into();
++            }
++            ui.label(RichText::new("Vendor account passwords must be entered only on the vendor's own website. Some web-app features are not available via API.").small().weak());
++            if !self.status.is_empty() { ui.label(RichText::new(&self.status).small()); }
++        });
++        self.settings_open = open;
++    }
++    pub fn confirm_delete_ui(&mut self, ctx: &egui::Context) {
++        let Some(id) = self.delete_confirm else { return; };
++        egui::Window::new("Delete chat history?").collapsible(false)
++            .anchor(egui::Align2::CENTER_CENTER, [0., 0.]).show(ctx, |ui| {
++            ui.label("This removes the selected local conversation, not the provider's account history.");
++            ui.horizontal(|ui| {
++                if ui.button("Delete conversation").clicked() {
++                    self.data.conversations.retain(|c| c.id != id);
++                    if self.data.current == id { self.data.current = 0; }
++                    self.delete_confirm = None; self.save();
++                }
++                if ui.button("Cancel").clicked() { self.delete_confirm = None; }
++            });
++        });
++    }
++}
++
++fn credential_entry(vendor: Vendor) -> Result<keyring::Entry, String> {
++    keyring::Entry::new(SERVICE, &format!("provider.{}.api_key", vendor.id())).map_err(|e| e.to_string())
++}
++
++fn validate_endpoint(vendor: Vendor, endpoint: &str) -> Result<(), String> {
++    let parsed = reqwest::Url::parse(endpoint).map_err(|_| "Invalid API endpoint URL".to_string())?;
++    if vendor == Vendor::Ollama {
++        let host = parsed.host_str().unwrap_or("");
++        if !((host == "localhost" || host == "127.0.0.1" || host == "[::1]")
++            && parsed.scheme() == "http") {
++            return Err("Local Ollama must use an HTTP loopback address".into());
++        }
++    } else if parsed.scheme() != "https" {
++        return Err("API keys are only sent over HTTPS".into());
++    }
++    if !parsed.username().is_empty() || parsed.password().is_some() {
++        return Err("Do not put credentials in the endpoint URL".into());
++    }
++    Ok(())
++}
++fn make_request(vendor: Vendor, model: &str, system: &str, msgs: &[Message]) -> Value {
++    providers::adapter(vendor).format_request(model, system, msgs)
++}
++fn parse_answer(vendor: Vendor, response: &Value) -> Result<String, String> {
++    let content = providers::adapter(vendor).extract_text(response)
++        .filter(|s| !s.trim().is_empty())
++        .ok_or_else(|| "The provider returned no text reply. Check model/provider compatibility.".to_owned())?;
++    if content.len() > MAX_REPLY_BYTES { return Err("Reply too large; rejected for safe storage".into()); }
++    Ok(content)
++}
++fn request_chat(vendor: Vendor, endpoint: &str, model: &str, key: &str,
++                system: &str, messages: &[Message]) -> Result<String, String> {
++    validate_endpoint(vendor, endpoint)?;
++    if messages.iter().any(|m| m.content.len() > MAX_MESSAGE_BYTES) {
++        return Err("A message is larger than 64 KiB".into());
++    }
++    if messages.len() > 100 { return Err("Conversation exceeds 100 messages. Start a new chat.".into()); }
++    let client = reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(10))
++        .timeout(Duration::from_secs(120)).redirect(reqwest::redirect::Policy::none())
++        .build().map_err(|e| format!("HTTP client unavailable: {e}"))?;
++    let adapter = providers::adapter(vendor);
++    let url = adapter.endpoint(endpoint, model)?;
++    let body = make_request(vendor, model, system, messages);
++    let req = adapter.authorize(client.post(&url).json(&body), key);
++    let response = req.send().map_err(|e| format!("AI request failed: {e}"))?;
++    let status = response.status();
++    if !status.is_success() {
++        // Never reflect a vendor error body into the UI: it may contain token or prompt data.
++        return Err(format!("AI provider returned HTTP {}. Check model, API key, billing and provider status.", status.as_u16()));
++    }
++    // Bound the read itself to avoid allocating an unbounded malicious server response.
++    let mut text = String::new();
++    response.take((MAX_REPLY_BYTES * 3 + 1) as u64).read_to_string(&mut text)
++        .map_err(|e| format!("Could not read AI reply as UTF-8: {e}"))?;
++    if text.len() > MAX_REPLY_BYTES * 3 { return Err("AI reply exceeds response size limit".into()); }
++    let parsed: Value = serde_json::from_str(&text).map_err(|_| "AI response is not valid JSON".to_owned())?;
++    parse_answer(vendor, &parsed)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test] fn credentials_not_serialized() {
++        let json = serde_json::to_string(&ChatFile::default()).unwrap();
++        assert!(!json.contains("api_key"));
++        assert!(!json.contains("password"));
++        assert!(!json.contains("access_token"));
++    }
++    #[test] fn deny_insecure_endpoints() {
++        assert!(validate_endpoint(Vendor::Custom, "http://my-vendor.test/v1/chat/completions").is_err());
++        assert!(validate_endpoint(Vendor::Custom, "https://my-vendor.test/v1/chat/completions").is_ok());
++        assert!(validate_endpoint(Vendor::Ollama, "http://localhost:11434/v1/chat/completions").is_ok());
++    }
++    #[test] fn vendor_payloads() {
++        let msgs = vec![Message { role:"user".into(), content:"Hello".into() }];
++        assert_eq!(make_request(Vendor::Anthropic,"model","",&msgs)["messages"][0]["role"], "user");
++        assert_eq!(make_request(Vendor::Gemini,"model","",&msgs)["contents"][0]["role"], "user");
++        assert_eq!(make_request(Vendor::OpenAi,"model","",&msgs)["messages"][0]["role"], "user");
++    }
++    #[test] fn parse_three_families() {
++        assert_eq!(parse_answer(Vendor::OpenAi, &json!({"choices":[{"message":{"content":"a"}}]})).unwrap(),"a");
++        assert_eq!(parse_answer(Vendor::Anthropic, &json!({"content":[{"text":"b"}]})).unwrap(),"b");
++        assert_eq!(parse_answer(Vendor::Gemini, &json!({"candidates":[{"content":{"parts":[{"text":"c"}]}}]})).unwrap(),"c");
++    }
++    #[test]
++    fn old_chat_history_without_endpoint_remains_readable() {
++        let previous = r#"{"id":42,"title":"Previous chat","provider":"Custom","model":"test","messages":[{"role":"user","content":"hi"}]}"#;
++        let chat: Conversation = serde_json::from_str(previous).unwrap();
++        assert_eq!(chat.provider, Vendor::Custom);
++        assert_eq!(chat.endpoint, None);
++        assert_eq!(chat.messages.len(), 1);
++    }
++    #[test]
++    fn local_and_remote_endpoints_are_separated() {
++        assert!(validate_endpoint(Vendor::Custom, "https://host.invalid/api/chat").is_ok());
++        assert!(validate_endpoint(Vendor::Custom, "http://127.0.0.1:11434/api/chat").is_err());
++        assert!(validate_endpoint(Vendor::Ollama, "http://localhost:11434/api/chat").is_ok());
++        assert!(validate_endpoint(Vendor::Ollama, "http://192.168.0.1:11434/api/chat").is_err());
++        assert!(validate_endpoint(Vendor::Custom, "https://secret:password@host.invalid/api/chat").is_err());
++    }
++}
+diff --git a/src/ai/providers/mod.rs b/src/ai/providers/mod.rs
+new file mode 100644
+index 0000000..9f8cb1f
+--- /dev/null
++++ b/src/ai/providers/mod.rs
+@@ -0,0 +1,48 @@
++//! Vendor adapter components. Each API family implements the same Rust trait.
++//! Adding a new family does not require changing the conversation UI.
++mod openai_compatible;
++mod anthropic;
++mod gemini;
++
++use super::{Message, Vendor};
++use reqwest::blocking::RequestBuilder;
++use serde_json::Value;
++
++/// Object-safe component interface for outgoing API requests and text replies.
++pub trait AiProviderAdapter: Send + Sync {
++    fn format_request(&self, model: &str, system: &str, messages: &[Message]) -> Value;
++    fn extract_text(&self, response: &Value) -> Option<String>;
++    fn endpoint(&self, endpoint: &str, _model: &str) -> Result<String, String> {
++        Ok(endpoint.to_owned())
++    }
++    fn authorize(&self, request: RequestBuilder, api_key: &str) -> RequestBuilder;
++}
++
++static OPENAI: openai_compatible::OpenAiCompatible = openai_compatible::OpenAiCompatible;
++static ANTHROPIC: anthropic::Anthropic = anthropic::Anthropic;
++static GEMINI: gemini::Gemini = gemini::Gemini;
++
++pub fn adapter(vendor: Vendor) -> &'static dyn AiProviderAdapter {
++    // APIのプロトコル選択は言太郎ソースで定義する。異常時には元の安全な分類へ戻す。
++    match crate::gentaro::provider_protocol(vendor.id()) {
++        Ok(protocol) if protocol == "anthropic" => &ANTHROPIC,
++        Ok(protocol) if protocol == "gemini" => &GEMINI,
++        Ok(_) | Err(_) => match vendor {
++            Vendor::Anthropic => &ANTHROPIC,
++            Vendor::Gemini => &GEMINI,
++            _ => &OPENAI,
++        },
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn adapter_families_return_expected_payloads() {
++        let msgs = vec![Message { role:"user".to_owned(), content:"Hello".to_owned() }];
++        assert_eq!(adapter(Vendor::OpenAi).format_request("model","",&msgs)["messages"][0]["role"], "user");
++        assert_eq!(adapter(Vendor::Anthropic).format_request("model","",&msgs)["messages"][0]["role"], "user");
++        assert_eq!(adapter(Vendor::Gemini).format_request("model","",&msgs)["contents"][0]["role"], "user");
++    }
++}
+diff --git a/src/components/editor.rs b/src/components/editor.rs
+new file mode 100644
+index 0000000..871a0ad
+--- /dev/null
++++ b/src/components/editor.rs
+@@ -0,0 +1,88 @@
++//! Document tabs and syntax-highlighted editor component.
++use crate::{Action, EditorApp, syntax};
++use eframe::egui::{self, Color32, RichText};
++
++impl EditorApp {
++    fn tabs(&self, ui: &mut egui::Ui, actions: &mut Vec<Action>) {
++        egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
++            ui.horizontal(|ui| {
++                for (index, doc) in self.docs.iter().enumerate() {
++                    let active = index == self.active;
++                    let text = if active { RichText::new(doc.display_title()).strong() } else { RichText::new(doc.display_title()) };
++                    if ui.selectable_label(active, text).clicked() { actions.push(Action::Select(index)); }
++                    if ui.small_button("×").on_hover_text("Close tab").clicked() {
++                        actions.push(Action::Close(doc.id));
++                    }
++                    ui.separator();
++                }
++            });
++        });
++    }
++
++    fn center_panel(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
++        egui::CentralPanel::default().show(ctx, |ui| {
++            self.tabs(ui, actions);
++            ui.separator();
++            let Some(doc) = self.docs.get_mut(self.active) else { return; };
++            let lang = syntax::Language::from_path(doc.path.as_deref());
++            let dark = self.dark;
++            let font_size = self.font_size;
++            let id = egui::Id::new(("toneedit-text", doc.id));
++            let mut layouter = move |ui: &egui::Ui, buf: &str, wrap_width: f32| {
++                let layout = syntax::highlight(buf, lang, dark, wrap_width, font_size);
++                ui.fonts(|fonts| fonts.layout_job(layout))
++            };
++            let line_total = doc.text.bytes().filter(|b| *b == b'\n').count() + 1;
++            let gutter = if line_total <= 4_000 {
++                let digits = line_total.to_string().len();
++                Some((1..=line_total).map(|line| format!("{line:>digits$}"))
++                    .collect::<Vec<_>>().join("\n"))
++            } else { None };
++            let output = egui::ScrollArea::both().id_salt(("editor-scroll", doc.id)).show(ui, |ui| {
++                ui.horizontal_top(|ui| {
++                    if let Some(gutter) = &gutter {
++                        ui.label(RichText::new(gutter).monospace().size(font_size)
++                            .color(if dark { Color32::GRAY } else { Color32::DARK_GRAY }));
++                        ui.separator();
++                    }
++                    egui::TextEdit::multiline(&mut doc.text)
++                        .id(id)
++                        .font(egui::TextStyle::Monospace)
++                        .code_editor()
++                        .desired_width(f32::INFINITY)
++                        .desired_rows(35)
++                        .lock_focus(true)
++                        .layouter(&mut layouter)
++                        .show(ui)
++                }).inner
++            });
++            let output = output.inner;
++            if output.response.changed() {
++                doc.dirty = true;
++                actions.push(Action::RefreshSearch);
++            }
++            if let Some(range) = output.cursor_range {
++                self.cursor_char = range.primary.ccursor.index;
++            }
++            if let Some((start,end)) = self.jump.take() {
++                if let Some(mut state) = egui::TextEdit::load_state(ctx, id) {
++                    use egui::text::{CCursor, CCursorRange};
++                    state.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(start), CCursor::new(end))));
++                    state.store(ctx, id);
++                    ctx.memory_mut(|m| m.request_focus(id));
++                }
++            }
++        });
++    }
++
++}
++
++pub(super) struct CentralEditor;
++impl super::WorkbenchComponent for CentralEditor {
++    fn id(&self) -> &'static str { "edit.document" }
++    fn title(&self) -> &'static str { "Code editor / Tabs" }
++    fn region(&self) -> &'static str { "Center" }
++    fn render(&self, app: &mut EditorApp, ctx: &egui::Context, actions: &mut Vec<Action>) {
++        app.center_panel(ctx, actions);
++    }
++}
+diff --git a/src/components/status.rs b/src/components/status.rs
+new file mode 100644
+index 0000000..47818b1
+--- /dev/null
++++ b/src/components/status.rs
+@@ -0,0 +1,90 @@
++//! Background task output and status bar components.
++use crate::{Action, EditorApp, document::{Encoding, LineEnding}, search, syntax};
++use eframe::egui::{self, Color32, RichText};
++
++impl EditorApp {
++    fn console_panel(&self, ctx: &egui::Context, actions: &mut Vec<Action>) {
++        if !self.show_console { return; }
++        egui::TopBottomPanel::bottom("cargo_console").resizable(true).default_height(175.0).show(ctx, |ui| {
++            ui.horizontal(|ui| {
++                ui.strong("CARGO / TASK OUTPUT");
++                if self.task_running { ui.spinner(); ui.label("running"); }
++            });
++            ui.separator();
++            egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
++                ui.label(RichText::new(&self.console).monospace().size(12.0));
++                if !self.workspace_search_summary.is_empty() {
++                    ui.separator();
++                    ui.label(RichText::new(&self.workspace_search_summary).strong());
++                    for hit in &self.workspace_hits {
++                        let row = format!("{}:{}  {}", hit.path.display(), hit.line, hit.excerpt);
++                        if ui.selectable_label(false, row).clicked() {
++                            actions.push(Action::OpenAt(hit.path.clone(), hit.line));
++                        }
++                    }
++                }
++            });
++        });
++    }
++
++    fn status_bar(&mut self, ctx: &egui::Context) {
++        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
++            ui.horizontal(|ui| {
++                if let Some(doc) = self.docs.get_mut(self.active) {
++                    let (line, col) = search::line_col_at_char(&doc.text, self.cursor_char);
++                    ui.label(format!("Ln {}, Col {}  |  {} lines  |  {} chars", line, col,
++                        doc.text.bytes().filter(|b| *b == b'\n').count() + 1, doc.text.chars().count()));
++                    ui.separator();
++                    ui.label(syntax::Language::from_path(doc.path.as_deref()).label());
++                    ui.separator();
++                    let before_enc = doc.encoding;
++                    egui::ComboBox::from_id_salt(("encoding", doc.id))
++                        .selected_text(doc.encoding.label())
++                        .show_ui(ui, |ui| {
++                            for enc in Encoding::ALL {
++                                ui.selectable_value(&mut doc.encoding, enc, enc.label());
++                            }
++                        });
++                    if before_enc != doc.encoding { doc.dirty = true; }
++                    let before_eol = doc.newline;
++                    egui::ComboBox::from_id_salt(("line-ending", doc.id))
++                        .selected_text(doc.newline.label())
++                        .show_ui(ui, |ui| {
++                            for eol in LineEnding::ALL {
++                                ui.selectable_value(&mut doc.newline, eol, eol.label());
++                            }
++                        });
++                    if before_eol != doc.newline { doc.dirty = true; }
++                    if doc.dirty {
++                        ui.colored_label(Color32::YELLOW,
++                            crate::gentaro::save_status(doc.dirty).unwrap_or_else(|_| "Modified".into()));
++                    }
++                    if doc.mixed_endings { ui.colored_label(Color32::YELLOW, "Mixed original EOL"); }
++                }
++                ui.separator();
++                ui.label(RichText::new(&self.status).small().weak());
++            });
++        });
++    }
++
++}
++
++pub(super) struct StatusBar;
++impl super::WorkbenchComponent for StatusBar {
++    fn id(&self) -> &'static str { "workbench.status" }
++    fn title(&self) -> &'static str { "Status bar" }
++    fn region(&self) -> &'static str { "Bottom" }
++    fn render(&self, app: &mut EditorApp, ctx: &egui::Context, _actions: &mut Vec<Action>) {
++        app.status_bar(ctx);
++    }
++}
++pub(super) struct TaskConsole;
++impl super::WorkbenchComponent for TaskConsole {
++    fn id(&self) -> &'static str { "dev.console" }
++    fn title(&self) -> &'static str { "Cargo / Task console" }
++    fn region(&self) -> &'static str { "Bottom" }
++    fn visible(&self, app: &EditorApp) -> bool { app.show_console }
++    fn render(&self, app: &mut EditorApp, ctx: &egui::Context, actions: &mut Vec<Action>) {
++        app.console_panel(ctx, actions);
++    }
++}
+diff --git a/src/gentaro.rs b/src/gentaro.rs
+new file mode 100644
+index 0000000..864fc34
+--- /dev/null
++++ b/src/gentaro.rs
+@@ -0,0 +1,397 @@
++//! Native Rust execution bridge for the currently documented subset of ToneGentaro.
++//! The actual editing policy is stored as Japanese `.tone` source, not repeated here.
++//! No JavaScript, HTML or Python is used by this runtime.
++use std::collections::HashMap;
++use std::sync::OnceLock;
++
++const RULES: &str = include_str!("../gentaro/ToneEdit_規則.tone");
++const STARTUP: &str = include_str!("../gentaro/ToneEdit_起動.tone");
++
++#[derive(Clone, Debug, PartialEq)]
++pub enum Value {
++    Text(String),
++    Bool(bool),
++    Integer(i64),
++}
++impl Value {
++    fn boolean(self) -> Result<bool, String> {
++        if let Self::Bool(value) = self { Ok(value) } else { Err("Expected a Gentaro true/false result".into()) }
++    }
++    fn text(self) -> Result<String, String> {
++        if let Self::Text(value) = self { Ok(value) } else { Err("Expected a Gentaro text result".into()) }
++    }
++}
++#[derive(Debug)]
++enum Statement {
++    If { condition: String, yes: Vec<Statement>, no: Vec<Statement> },
++    Return(String),
++    Display(String),
++    Variable(String, String),
++}
++struct Function { params: Vec<String>, body: Vec<Statement> }
++struct Engine { functions: HashMap<String, Function> }
++
++impl Engine {
++    fn parse(source: &str) -> Result<Self, String> {
++        let lines: Vec<&str> = source.lines().map(str::trim)
++            .filter(|line| !line.is_empty() && !line.starts_with('#')).collect();
++        let mut at = 0;
++        let mut functions = HashMap::new();
++        while at < lines.len() {
++            let signature = lines[at].strip_prefix("関数 ")
++                .ok_or_else(|| format!("Expected 関数 declaration at: {}", lines[at]))?
++                .strip_suffix(':').ok_or("Gentaro function needs a colon")?;
++            let (name, raw_params) = signature.split_once('(').ok_or("Function needs parentheses")?;
++            let raw_params = raw_params.strip_suffix(')').ok_or("Unclosed function parameters")?;
++            let params: Vec<String> = if raw_params.trim().is_empty() {
++                Vec::new()
++            } else { raw_params.split(',').map(|p| p.trim().to_owned()).collect() };
++            if name.trim().is_empty() || params.iter().any(|p| p.is_empty()) {
++                return Err("Empty function or parameter name".into());
++            }
++            at += 1;
++            let body = parse_block(&lines, &mut at)?;
++            if lines.get(at) != Some(&"終わり") { return Err(format!("Missing 終わり for {name}")); }
++            at += 1;
++            if functions.insert(name.trim().to_owned(), Function { params, body }).is_some() {
++                return Err(format!("Duplicate Gentaro function: {name}"));
++            }
++        }
++        Ok(Self { functions })
++    }
++    fn call(&self, name: &str, args: &[Value]) -> Result<Value, String> {
++        let function = self.functions.get(name).ok_or_else(|| format!("No Gentaro function: {name}"))?;
++        if args.len() != function.params.len() {
++            return Err(format!("Argument count mismatch for Gentaro function: {name}"));
++        }
++        let mut vars: HashMap<String, Value> = function.params.iter().cloned()
++            .zip(args.iter().cloned()).collect();
++        let mut budget = 1024usize;
++        execute(&function.body, &mut vars, &mut budget)?
++            .ok_or_else(|| format!("No return value from Gentaro function: {name}"))
++    }
++}
++fn parse_block(lines: &[&str], at: &mut usize) -> Result<Vec<Statement>, String> {
++    let mut statements = Vec::new();
++    while let Some(&line) = lines.get(*at) {
++        if line == "終わり" || line == "そうでなければ:" { break; }
++        if let Some(cond) = line.strip_prefix("もし ").and_then(|part| part.strip_suffix(" なら:")) {
++            *at += 1;
++            let yes = parse_block(lines, at)?;
++            let no = if lines.get(*at) == Some(&"そうでなければ:") {
++                *at += 1;
++                parse_block(lines, at)?
++            } else { Vec::new() };
++            if lines.get(*at) != Some(&"終わり") {
++                return Err(format!("Missing 終わり after もし: {cond}"));
++            }
++            *at += 1;
++            statements.push(Statement::If { condition: cond.to_owned(), yes, no });
++            continue;
++        }
++        if let Some(expr) = line.strip_suffix(" を返す") {
++            statements.push(Statement::Return(expr.to_owned()));
++        } else if let Some(expr) = line.strip_suffix(" を表示") {
++            statements.push(Statement::Display(expr.to_owned()));
++        } else if let Some(declaration) = line.strip_prefix("変数 ") {
++            let (name, expression) = declaration.split_once(" = ")
++                .ok_or("Invalid Gentaro variable assignment")?;
++            statements.push(Statement::Variable(name.to_owned(), expression.to_owned()));
++        } else {
++            return Err(format!("Unrecognized Gentaro statement: {line}"));
++        }
++        *at += 1;
++    }
++    Ok(statements)
++}
++fn execute(body: &[Statement], vars: &mut HashMap<String, Value>, budget: &mut usize)
++    -> Result<Option<Value>, String> {
++    for statement in body {
++        if *budget == 0 { return Err("Gentaro execution budget exceeded".into()); }
++        *budget -= 1;
++        match statement {
++            Statement::Return(expr) => return Ok(Some(evaluate(expr, vars)?)),
++            Statement::Display(expr) => {
++                // Display is intentionally NOT printed from embedded UI policies.
++                let _ = evaluate(expr, vars)?;
++            }
++            Statement::Variable(name, expr) => {
++                let value = evaluate(expr, vars)?;
++                vars.insert(name.clone(), value);
++            }
++            Statement::If { condition, yes, no } => {
++                let value = evaluate(condition, vars)?.boolean()?;
++                if let Some(result) = execute(if value { yes } else { no }, vars, budget)? {
++                    return Ok(Some(result));
++                }
++            }
++        }
++    }
++    Ok(None)
++}
++
++#[derive(Clone, Debug, PartialEq)]
++enum Token { Text(String), Identifier(String), Number(i64), Symbol(String), Open, Close }
++fn tokenize(input: &str) -> Result<Vec<Token>, String> {
++    let chars: Vec<char> = input.chars().collect();
++    let mut at = 0;
++    let mut out = Vec::new();
++    while at < chars.len() {
++        let c = chars[at];
++        if c.is_whitespace() { at += 1; continue; }
++        if c == '「' {
++            let start = at + 1;
++            at += 1;
++            while at < chars.len() && chars[at] != '」' { at += 1; }
++            if at == chars.len() { return Err("Unclosed Gentaro text literal".into()); }
++            out.push(Token::Text(chars[start..at].iter().collect()));
++            at += 1;
++        } else if c.is_ascii_digit() {
++            let start = at;
++            while at < chars.len() && chars[at].is_ascii_digit() { at += 1; }
++            let number: String = chars[start..at].iter().collect();
++            out.push(Token::Number(number.parse().map_err(|_| "Integer overflow")?));
++        } else if c == '(' { out.push(Token::Open); at += 1; }
++        else if c == ')' { out.push(Token::Close); at += 1; }
++        else if "=!<>+-*/%&|".contains(c) {
++            let mut op = c.to_string();
++            at += 1;
++            if at < chars.len() && (chars[at] == '=' || chars[at] == c && (c == '&' || c == '|')) {
++                op.push(chars[at]); at += 1;
++            }
++            if !["==", "!=", ">=", "<=", ">", "<", "+", "-", "*", "/", "%", "!", "&&", "||"].contains(&op.as_str()) {
++                return Err(format!("Unsupported Gentaro operator: {op}"));
++            }
++            out.push(Token::Symbol(op));
++        } else {
++            let start = at;
++            while at < chars.len() && !chars[at].is_whitespace()
++                && !"「」()=!<>+-*/%&|".contains(chars[at]) { at += 1; }
++            if start == at { return Err(format!("Unrecognized Gentaro character: {}", chars[at])); }
++            let name: String = chars[start..at].iter().collect();
++            if name == "かつ" { out.push(Token::Symbol("&&".into())); }
++            else if name == "または" { out.push(Token::Symbol("||".into())); }
++            else { out.push(Token::Identifier(name)); }
++        }
++    }
++    Ok(out)
++}
++struct Expression<'a> { tokens: Vec<Token>, at: usize, vars: &'a HashMap<String, Value> }
++impl<'a> Expression<'a> {
++    fn eat(&mut self, op: &str) -> bool {
++        if let Some(Token::Symbol(current)) = self.tokens.get(self.at) {
++            if current == op { self.at += 1; return true; }
++        }
++        false
++    }
++    fn logical_or(&mut self) -> Result<Value, String> {
++        let mut left = self.logical_and()?;
++        while self.eat("||") {
++            let right = self.logical_and()?;
++            left = Value::Bool(left.boolean()? || right.boolean()?);
++        }
++        Ok(left)
++    }
++    fn logical_and(&mut self) -> Result<Value, String> {
++        let mut left = self.compare()?;
++        while self.eat("&&") {
++            let right = self.compare()?;
++            left = Value::Bool(left.boolean()? && right.boolean()?);
++        }
++        Ok(left)
++    }
++    fn compare(&mut self) -> Result<Value, String> {
++        let mut left = self.add()?;
++        loop {
++            let operator = if self.eat("==") { "==" } else if self.eat("!=") { "!=" }
++                else if self.eat(">=") { ">=" } else if self.eat("<=") { "<=" }
++                else if self.eat(">") { ">" } else if self.eat("<") { "<" }
++                else { break; };
++            let right = self.add()?;
++            let result = match operator {
++                "==" => left == right,
++                "!=" => left != right,
++                _ => match (&left, &right) {
++                    (Value::Integer(a), Value::Integer(b)) => match operator {
++                        ">=" => a >= b, "<=" => a <= b, ">" => a > b, "<" => a < b, _ => unreachable!(),
++                    },
++                    _ => return Err("Comparison requires two integers".into()),
++                },
++            };
++            left = Value::Bool(result);
++        }
++        Ok(left)
++    }
++    fn add(&mut self) -> Result<Value, String> {
++        let mut left = self.multiply()?;
++        loop {
++            let operator = if self.eat("+") { "+" } else if self.eat("-") { "-" } else { break };
++            let right = self.multiply()?;
++            left = match (left, right, operator) {
++                (Value::Text(a), Value::Text(b), "+") => Value::Text(a + &b),
++                (Value::Integer(a), Value::Integer(b), "+") => Value::Integer(a.checked_add(b).ok_or("Integer overflow")?),
++                (Value::Integer(a), Value::Integer(b), "-") => Value::Integer(a.checked_sub(b).ok_or("Integer overflow")?),
++                _ => return Err("Incompatible Gentaro arithmetic operands".into()),
++            };
++        }
++        Ok(left)
++    }
++    fn multiply(&mut self) -> Result<Value, String> {
++        let mut left = self.atom()?;
++        loop {
++            let operator = if self.eat("*") { "*" } else if self.eat("/") { "/" }
++                else if self.eat("%") { "%" } else { break; };
++            let right = self.atom()?;
++            left = match (left, right) {
++                (Value::Integer(a), Value::Integer(b)) => Value::Integer(match operator {
++                    "*" => a.checked_mul(b), "/" => a.checked_div(b), "%" => a.checked_rem(b), _ => None,
++                }.ok_or("Gentaro arithmetic overflow or division by zero")?),
++                _ => return Err("Multiplication requires integers".into()),
++            };
++        }
++        Ok(left)
++    }
++    fn atom(&mut self) -> Result<Value, String> {
++        if self.eat("!") { return Ok(Value::Bool(!self.atom()?.boolean()?)); }
++        if self.eat("-") {
++            if let Value::Integer(value) = self.atom()? {
++                return Ok(Value::Integer(value.checked_neg().ok_or("Integer overflow")?));
++            }
++            return Err("Unary minus requires an integer".into());
++        }
++        let token = self.tokens.get(self.at).cloned().ok_or("Missing Gentaro expression")?;
++        self.at += 1;
++        match token {
++            Token::Text(s) => Ok(Value::Text(s)),
++            Token::Number(n) => Ok(Value::Integer(n)),
++            Token::Identifier(name) if name == "真" => Ok(Value::Bool(true)),
++            Token::Identifier(name) if name == "偽" => Ok(Value::Bool(false)),
++            Token::Identifier(name) => self.vars.get(&name).cloned().ok_or_else(|| format!("Unknown Gentaro variable: {name}")),
++            Token::Open => {
++                let value = self.logical_or()?;
++                if self.tokens.get(self.at) != Some(&Token::Close) { return Err("Missing closing parenthesis".into()); }
++                self.at += 1;
++                Ok(value)
++            }
++            _ => Err("Unsupported Gentaro expression".into()),
++        }
++    }
++}
++fn evaluate(expr: &str, vars: &HashMap<String, Value>) -> Result<Value, String> {
++    let mut parser = Expression { tokens: tokenize(expr)?, at: 0, vars };
++    let result = parser.logical_or()?;
++    if parser.at != parser.tokens.len() { return Err(format!("Trailing expression tokens in {expr}")); }
++    Ok(result)
++}
++
++static ENGINE: OnceLock<Result<Engine, String>> = OnceLock::new();
++fn invoke(name: &str, args: &[Value]) -> Result<Value, String> {
++    let engine = ENGINE.get_or_init(|| {
++        let mut engine = Engine::parse(RULES)?;
++        let startup = Engine::parse(STARTUP)?;
++        for (name, function) in startup.functions {
++            if engine.functions.insert(name.clone(), function).is_some() {
++                return Err(format!("Duplicate name across Gentaro components: {name}"));
++            }
++        }
++        Ok(engine)
++    }).as_ref().map_err(|error| error.clone())?;
++    engine.call(name, args)
++}
++fn boolean(v: bool) -> Value { Value::Bool(v) }
++
++pub fn product_name() -> Result<String, String> {
++    invoke("製品名", &[])?.text()
++}
++
++pub fn document_title(name: &str, modified: bool) -> Result<String, String> {
++    invoke("文書名を作る", &[Value::Text(name.to_owned()), boolean(modified)])?.text()
++}
++pub fn block_unsafe_save(file_exists: bool, timestamp_equal: bool, content_equal: bool) -> Result<bool, String> {
++    invoke("保存を拒否する", &[boolean(file_exists), boolean(timestamp_equal), boolean(content_equal)])?.boolean()
++}
++pub fn skip_search(query: &str) -> Result<bool, String> {
++    invoke("検索を省略する", &[Value::Text(query.to_owned())])?.boolean()
++}
++pub fn split_conversation(has_history: bool, vendor_changed: bool, endpoint_changed: bool) -> Result<bool, String> {
++    invoke("会話を分離する", &[boolean(has_history), boolean(vendor_changed), boolean(endpoint_changed)])?.boolean()
++}
++pub fn api_key_required(vendor_id: &str) -> Result<bool, String> {
++    invoke("AI鍵が必要", &[Value::Text(vendor_id.to_owned())])?.boolean()
++}
++pub fn provider_protocol(vendor_id: &str) -> Result<String, String> {
++    invoke("API形式を選ぶ", &[Value::Text(vendor_id.to_owned())])?.text()
++}
++pub fn reject_ai_send(in_flight: bool, empty: bool, too_large: bool) -> Result<bool, String> {
++    invoke("送信を拒否する", &[boolean(in_flight), boolean(empty), boolean(too_large)])?.boolean()
++}
++pub fn save_status(modified: bool) -> Result<String, String> {
++    invoke("入力済みの表示", &[boolean(modified)])?.text()
++}
++pub fn installer_path_denied(not_absolute: bool, has_parent: bool, unsafe_depth: bool) -> Result<bool, String> {
++    invoke("インストール先を拒否する", &[boolean(not_absolute), boolean(has_parent), boolean(unsafe_depth)])?.boolean()
++}
++pub fn uninstallation_allowed(marker_valid: bool, destination_valid: bool) -> Result<bool, String> {
++    invoke("削除を許可する", &[boolean(marker_valid), boolean(destination_valid)])?.boolean()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test] fn parses_japanese_functions() { assert!(Engine::parse(RULES).is_ok()); }
++    #[test] fn document_names() {
++        assert_eq!(document_title("あ.txt", true).unwrap(), "あ.txt ●");
++        assert_eq!(document_title("a.txt", false).unwrap(), "a.txt");
++    }
++    #[test] fn identity_and_license() {
++        assert_eq!(product_name().unwrap(), "ToneEdit Studio");
++        assert_eq!(invoke("ライセンス", &[]).unwrap(), Value::Text("MIT".into()));
++        assert_eq!(invoke("課金方式", &[]).unwrap(), Value::Text("完全無料".into()));
++    }
++    #[test] fn preserve_external_edits() {
++        assert_eq!(block_unsafe_save(true, true, true).unwrap(), false);
++        assert_eq!(block_unsafe_save(false, true, true).unwrap(), true);
++        assert_eq!(block_unsafe_save(true, false, true).unwrap(), true);
++        assert_eq!(block_unsafe_save(true, true, false).unwrap(), true);
++    }
++    #[test] fn search_and_credential_rules() {
++        assert!(skip_search("").unwrap());
++        assert!(!skip_search("日本語").unwrap());
++        assert!(!api_key_required("ollama").unwrap());
++        assert!(api_key_required("openai").unwrap());
++    }
++    #[test] fn cross_vendor_chat_is_isolated() {
++        assert!(split_conversation(true, true, false).unwrap());
++        assert!(split_conversation(true, false, true).unwrap());
++        assert!(!split_conversation(false, true, true).unwrap());
++    }
++    #[test] fn routes_ai_protocols() {
++        assert_eq!(provider_protocol("anthropic").unwrap(), "anthropic");
++        assert_eq!(provider_protocol("gemini").unwrap(), "gemini");
++        assert_eq!(provider_protocol("openai").unwrap(), "openai互換");
++        assert_eq!(provider_protocol("deepseek").unwrap(), "openai互換");
++    }
++    #[test] fn sends_are_explicit_and_safe() {
++        assert!(reject_ai_send(true, false, false).unwrap());
++        assert!(reject_ai_send(false, true, false).unwrap());
++        assert!(reject_ai_send(false, false, true).unwrap());
++        assert!(!reject_ai_send(false, false, false).unwrap());
++        assert_eq!(save_status(true).unwrap(), "未保存");
++    }
++    #[test] fn deletion_requires_two_validations() {
++        assert!(!uninstallation_allowed(false, true).unwrap());
++        assert!(!uninstallation_allowed(true, false).unwrap());
++        assert!(uninstallation_allowed(true, true).unwrap());
++    }
++    #[test] fn deny_risky_install_directory() {
++        assert!(installer_path_denied(true, false, false).unwrap());
++        assert!(installer_path_denied(false, true, false).unwrap());
++        assert!(!installer_path_denied(false, false, false).unwrap());
++    }
++    #[test] fn expression_operators() {
++        let vars = HashMap::new();
++        assert_eq!(evaluate("(3 + 2) * 4 == 20", &vars).unwrap(), boolean(true));
++        assert_eq!(evaluate("真 かつ 偽", &vars).unwrap(), boolean(false));
++        assert_eq!(evaluate("「日本」 + 「語」", &vars).unwrap(), Value::Text("日本語".into()));
++    }
++}
+diff --git a/src/main.rs b/src/main.rs
+new file mode 100644
+index 0000000..2f499bf
+--- /dev/null
++++ b/src/main.rs
+@@ -0,0 +1,827 @@
++#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
++//! ToneEdit Studio — a native desktop editor, written entirely in Rust.
++//! All disk writes are user-triggered or recovery-session autosaves.
++mod document;
++mod search;
++mod syntax;
++mod workspace;
++mod ai;
++mod google_oauth;
++mod components;
++mod gentaro;
++
++use document::{Encoding, LineEnding};
++use eframe::egui::{self, Key};
++use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
++use std::fs::{self, File};
++use std::io::Read;
++use std::path::{Path, PathBuf};
++use std::process::Command;
++use std::sync::mpsc::{self, Receiver, Sender};
++use std::thread;
++use std::time::{Duration, Instant, SystemTime};
++
++fn main() -> eframe::Result<()> {
++    // This runs without opening a desktop window. Windows release automation
++    // uses it to exercise the real compiled executable and core disk I/O.
++    if std::env::args().any(|arg| arg == "--self-test") {
++        match smoke_test() {
++            Ok(()) => return Ok(()),
++            Err(error) => { eprintln!("ToneEdit self-test failed: {error}"); std::process::exit(1); }
++        }
++    }
++    let display_name = gentaro::product_name().unwrap_or_else(|_| "ToneEdit Studio".to_owned());
++    let options = eframe::NativeOptions {
++        renderer: eframe::Renderer::Wgpu,
++        viewport: egui::ViewportBuilder::default()
++            .with_title(format!("{display_name} 1.2.1"))
++            .with_inner_size([1400.0, 870.0])
++            .with_min_inner_size([800.0, 520.0]),
++        ..Default::default()
++    };
++    eframe::run_native("ToneEdit Studio", options, Box::new(|cc| {
++        setup_fonts(&cc.egui_ctx);
++        Ok(Box::new(EditorApp::new(&cc.egui_ctx)))
++    }))
++}
++
++fn smoke_test() -> Result<(), String> {
++    let scratch = std::env::temp_dir().join(format!("toneedit-self-test-{}", std::process::id()));
++    fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
++    let file = scratch.join("multilingual.txt");
++    let result = (|| {
++        document::save(&file, "日本語\nRust 🌸", Encoding::Utf8Bom, LineEnding::CrLf)?;
++        let loaded = document::load(&file)?;
++        if loaded.text != "日本語\nRust 🌸" || loaded.encoding != Encoding::Utf8Bom
++            || loaded.newline != LineEnding::CrLf {
++            return Err("UTF-8 BOM / CRLF round trip failed".to_owned());
++        }
++        let hits = search::find(&loaded.text, "Rust", false, true, 16)?;
++        if hits.locations.len() != 1 { return Err("Search self-test failed".to_owned()); }
++        document::save(&file, "更新", Encoding::Utf16Le, LineEnding::Lf)?;
++        let backup = fs::read(document::backup_path(&file)).map_err(|e| e.to_string())?;
++        if document::decode_bytes(&backup)?.text != "日本語\nRust 🌸" {
++            return Err("Backup self-test failed".into());
++        }
++        Ok(())
++    })();
++    let _ = fs::remove_dir_all(scratch);
++    result
++}
++
++fn setup_fonts(ctx: &egui::Context) {
++    // egui's built-in fonts remain in place. If available, add a CJK fallback.
++    let candidates: &[&str] = if cfg!(windows) {
++        &["C:/Windows/Fonts/meiryo.ttc", "C:/Windows/Fonts/YuGothR.ttc", "C:/Windows/Fonts/msgothic.ttc"]
++    } else if cfg!(target_os = "macos") {
++        &["/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"]
++    } else {
++        &["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
++    };
++    if let Some(bytes) = candidates.iter().find_map(|p| fs::read(p).ok()) {
++        let mut fonts = egui::FontDefinitions::default();
++        fonts.font_data.insert("system_cjk".into(), egui::FontData::from_owned(bytes).into());
++        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
++            fonts.families.entry(family).or_default().push("system_cjk".into());
++        }
++        ctx.set_fonts(fonts);
++    }
++}
++
++#[derive(Clone)]
++struct Document {
++    id: u64,
++    path: Option<PathBuf>,
++    text: String,
++    dirty: bool,
++    encoding: Encoding,
++    newline: LineEnding,
++    disk_modified: Option<SystemTime>,
++    disk_fingerprint: Option<[u8; 32]>,
++    mixed_endings: bool,
++}
++
++/// The contents hash supplements modification times: network drives and file
++/// systems with coarse timestamps can report the same time after a rewrite.
++fn fingerprint(path: &Path) -> Result<[u8; 32], String> {
++    let mut file = File::open(path).map_err(|e| format!("Cannot inspect file contents: {e}"))?;
++    let mut digest = Sha256::new();
++    let mut block = [0u8; 8192];
++    loop {
++        let n = file.read(&mut block).map_err(|e| format!("Cannot inspect file contents: {e}"))?;
++        if n == 0 { break; }
++        digest.update(&block[..n]);
++    }
++    Ok(digest.finalize().into())
++}
++impl Document {
++    fn empty(id: u64) -> Self {
++        Self { id, path: None, text: String::new(), dirty: false,
++            encoding: Encoding::Utf8, newline: LineEnding::Lf,
++            disk_modified: None, disk_fingerprint: None, mixed_endings: false }
++    }
++    fn title(&self) -> String {
++        self.path.as_ref().and_then(|p| p.file_name()).map(|s| s.to_string_lossy().into_owned())
++            .unwrap_or_else(|| format!("Untitled-{}", self.id))
++    }
++    fn display_title(&self) -> String {
++        let title = self.title();
++        gentaro::document_title(&title, self.dirty)
++            .unwrap_or_else(|_| format!("{title}{}", if self.dirty { " ●" } else { "" }))
++    }
++    fn from_file(id: u64, path: PathBuf) -> Result<Self, String> {
++        let result = document::load(&path)?;
++        let disk_fingerprint = Some(fingerprint(&path)?);
++        Ok(Self { id, disk_modified: document::file_modification(&path), disk_fingerprint,
++            path: Some(path),
++            text: result.text, dirty: false, encoding: result.encoding, newline: result.newline,
++            mixed_endings: result.mixed_newlines })
++    }
++    fn save(&mut self, path: &Path, force_overwrite: bool) -> Result<(), String> {
++        if !force_overwrite && self.path.as_deref() == Some(path) {
++            // 保存可否の分岐は言太郎ソースを優先して評価する。
++            // 原本保護のため、Rustの安全確認も必ず残す（二重防御）。
++            let file_exists = path.is_file();
++            let time_matches = file_exists && self.disk_modified == document::file_modification(path);
++            let content_matches = if file_exists && time_matches {
++                match self.disk_fingerprint {
++                    Some(known) => fingerprint(path)? == known,
++                    None => true,
++                }
++            } else { false };
++            let blocked_by_gentaro = gentaro::block_unsafe_save(file_exists, time_matches, content_matches)
++                .unwrap_or(true);
++            // A file deleted between opening and saving is also an external change.
++            // Do not silently resurrect it. The explicit force command can override.
++            if !file_exists {
++                return Err("The original file was removed or replaced. Use Save As to avoid data loss.".into());
++            }
++            if !time_matches {
++                return Err("The file was changed or removed by another program. Use Save As to preserve both versions or explicitly overwrite the changed file.".into());
++            }
++            if !content_matches {
++                return Err("The contents of this file changed outside ToneEdit Studio, even though its timestamp did not. Save As or explicitly overwrite it.".into());
++            }
++            if blocked_by_gentaro {
++                return Err("Gentaro policy rejected an unsafe save".into());
++            }
++        }
++        document::save(path, &self.text, self.encoding, self.newline)?;
++        self.path = Some(path.to_owned());
++        self.disk_modified = document::file_modification(path);
++        self.disk_fingerprint = Some(fingerprint(path)?);
++        self.dirty = false;
++        self.mixed_endings = false;
++        Ok(())
++    }
++}
++
++#[derive(Debug, Serialize, Deserialize)]
++struct SavedDoc {
++    path: Option<PathBuf>,
++    dirty: bool,
++    /// Snapshots only for new/dirty tabs, so clean files load from disk at next start.
++    content: Option<String>,
++    encoding: Encoding,
++    newline: LineEnding,
++    #[serde(default)]
++    disk_modified_nanos: Option<u64>,
++    #[serde(default)]
++    disk_fingerprint: Option<[u8; 32]>,
++}
++#[derive(Debug, Serialize, Deserialize)]
++struct Session {
++    docs: Vec<SavedDoc>,
++    active: usize,
++    workspace: Option<PathBuf>,
++    recent: Vec<PathBuf>,
++    dark: bool,
++    font_size: f32,
++    #[serde(default = "default_show_explorer")]
++    show_explorer: bool,
++    #[serde(default)]
++    show_search: bool,
++    #[serde(default)]
++    show_preview: bool,
++    #[serde(default)]
++    show_console: bool,
++    #[serde(default)]
++    show_ai: bool,
++}
++
++fn default_show_explorer() -> bool { true }
++
++#[derive(Default)]
++struct FindPanel {
++    open: bool,
++    term: String,
++    replace: String,
++    regex: bool,
++    case_sensitive: bool,
++    results: search::Matches,
++    selected: usize,
++    error: String,
++}
++
++#[derive(Debug, Clone, Copy)]
++enum CargoAction { Check, Test, Build, Format }
++impl CargoAction {
++    fn args(self) -> &'static [&'static str] {
++        match self {
++            Self::Check => &["check"], Self::Test => &["test"],
++            Self::Build => &["build", "--release"], Self::Format => &["fmt", "--all"],
++        }
++    }
++    fn label(self) -> &'static str {
++        match self { Self::Check => "Cargo check", Self::Test => "Cargo test",
++                     Self::Build => "Cargo build --release", Self::Format => "Cargo fmt" }
++    }
++}
++
++#[derive(Debug)]
++enum Action {
++    New, OpenDialog, OpenFile(PathBuf), OpenFolder,
++    Save, SaveAs, SaveAll, SaveForce, Close(u64), Select(usize),
++    RefreshSearch, FindNext(bool), ReplaceOne, ReplaceAll,
++    Goto(usize), ToggleFind, ToggleGoto, TogglePreview,
++    JsonPretty, JsonCompact, TrimTrailingWhitespace, SortLines,
++    Cargo(CargoAction), ToggleTheme, FontSize(f32),
++    ToggleExplorer, ComponentsSettings,
++    ReloadFile, ShowHelp, SearchWorkspace, OpenAt(PathBuf, usize),
++    ToggleAi, AiSettings,
++}
++
++enum CloseChoice { Save, Discard, Cancel }
++struct TaskResult { title: String, output: String }
++
++struct EditorApp {
++    ai: ai::AiWorkspace,
++    docs: Vec<Document>,
++    next_id: u64,
++    active: usize,
++    workspace: Option<PathBuf>,
++    recent: Vec<PathBuf>,
++    find: FindPanel,
++    goto_open: bool,
++    goto_input: String,
++    show_preview: bool,
++    show_explorer: bool,
++    components_open: bool,
++    show_console: bool,
++    show_help: bool,
++    dark: bool,
++    font_size: f32,
++    pending_close: Option<u64>,
++    jump: Option<(usize, usize)>,
++    cursor_char: usize,
++    warning: Option<String>,
++    notice: Option<String>,
++    status: String,
++    console: String,
++    task_running: bool,
++    task_tx: Sender<TaskResult>,
++    task_rx: Receiver<TaskResult>,
++    search_tx: Sender<workspace::SearchReport>,
++    search_rx: Receiver<workspace::SearchReport>,
++    workspace_hits: Vec<workspace::Hit>,
++    workspace_search_running: bool,
++    workspace_search_summary: String,
++    state_path: PathBuf,
++    last_recovery: Instant,
++}
++
++fn default_state_path() -> PathBuf {
++    if let Some(root) = std::env::var_os("APPDATA") {
++        return PathBuf::from(root).join("ToneEditStudio").join("session.json");
++    }
++    if let Some(root) = std::env::var_os("XDG_STATE_HOME") {
++        return PathBuf::from(root).join("toneedit-studio").join("session.json");
++    }
++    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
++        .join(".toneedit-studio").join("session.json")
++}
++
++impl EditorApp {
++    fn new(ctx: &egui::Context) -> Self {
++        let state_path = default_state_path();
++        let (task_tx, task_rx) = mpsc::channel();
++        let (search_tx, search_rx) = mpsc::channel();
++        let mut app = Self {
++            ai: ai::AiWorkspace::new(),
++            docs: vec![], next_id: 1, active: 0,
++            workspace: None, recent: vec![], find: FindPanel::default(),
++            goto_open: false, goto_input: "1".into(), show_preview: false,
++            show_explorer: true, components_open: false,
++            show_console: false, show_help: false, dark: true, font_size: 14.0,
++            pending_close: None, jump: None, cursor_char: 0,
++            warning: None, notice: None, status: "Ready".into(), console: String::new(),
++            task_running: false, task_tx, task_rx, search_tx, search_rx,
++            workspace_hits: vec![], workspace_search_running: false, workspace_search_summary: String::new(),
++            state_path, last_recovery: Instant::now(),
++        };
++        app.restore();
++        if app.docs.is_empty() { app.add_empty(); }
++        components::theme::apply(ctx, app.dark);
++        app
++    }
++
++    fn add_empty(&mut self) {
++        let id = self.alloc_id();
++        self.docs.push(Document::empty(id));
++        self.active = self.docs.len() - 1;
++        self.clear_search();
++    }
++    fn alloc_id(&mut self) -> u64 { let n = self.next_id; self.next_id += 1; n }
++    fn active_doc(&self) -> Option<&Document> { self.docs.get(self.active) }
++    fn active_doc_mut(&mut self) -> Option<&mut Document> { self.docs.get_mut(self.active) }
++    fn show_error(&mut self, detail: impl Into<String>) { self.warning = Some(detail.into()); }
++    fn show_notice(&mut self, detail: impl Into<String>) { self.notice = Some(detail.into()); }
++    fn clear_search(&mut self) {
++        self.find.results = search::Matches::default();
++        self.find.selected = 0;
++        self.find.error.clear();
++        self.jump = None;
++    }
++
++    fn modified_nanos(time: Option<SystemTime>) -> Option<u64> {
++        time.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
++            .and_then(|d| u64::try_from(d.as_nanos()).ok())
++    }
++
++    fn restore(&mut self) {
++        let Ok(text) = fs::read_to_string(&self.state_path) else { return; };
++        let Ok(saved) = serde_json::from_str::<Session>(&text) else { return; };
++        self.workspace = saved.workspace.filter(|p| p.is_dir());
++        self.recent = saved.recent.into_iter().filter(|p| p.is_file()).take(12).collect();
++        self.dark = saved.dark;
++        self.font_size = saved.font_size.clamp(10.0, 28.0);
++        self.show_explorer = saved.show_explorer;
++        self.find.open = saved.show_search;
++        self.show_preview = saved.show_preview;
++        self.show_console = saved.show_console;
++        self.ai.visible = saved.show_ai;
++        for sd in saved.docs {
++            let id = self.alloc_id();
++            let doc = if let Some(content) = sd.content {
++                Document { id, path: sd.path.clone(), text: content, dirty: sd.dirty,
++                    encoding: sd.encoding, newline: sd.newline,
++                    disk_modified: sd.disk_modified_nanos.map(|ns| std::time::UNIX_EPOCH + Duration::from_nanos(ns)),
++                    disk_fingerprint: sd.disk_fingerprint, mixed_endings: false }
++            } else if let Some(path) = sd.path {
++                match Document::from_file(id, path) { Ok(doc) => doc, Err(_) => continue }
++            } else { Document::empty(id) };
++            self.docs.push(doc);
++        }
++        if !self.docs.is_empty() { self.active = saved.active.min(self.docs.len() - 1); }
++    }
++
++    fn persist(&self) {
++        let session = Session {
++            docs: self.docs.iter().map(|d| SavedDoc {
++                path: d.path.clone(), dirty: d.dirty,
++                content: if d.dirty || d.path.is_none() { Some(d.text.clone()) } else { None },
++                encoding: d.encoding, newline: d.newline,
++                disk_modified_nanos: Self::modified_nanos(d.disk_modified),
++                disk_fingerprint: d.disk_fingerprint,
++            }).collect(),
++            active: self.active, workspace: self.workspace.clone(), recent: self.recent.clone(),
++            dark: self.dark, font_size: self.font_size,
++            show_explorer: self.show_explorer,
++            show_search: self.find.open,
++            show_preview: self.show_preview,
++            show_console: self.show_console,
++            show_ai: self.ai.visible,
++        };
++        if let Ok(json) = serde_json::to_string(&session) {
++            if let Err(e) = document::save_state(&self.state_path, &json) {
++                eprintln!("Recovery session save failed: {e}");
++            }
++        }
++    }
++
++    fn track_recent(&mut self, path: &Path) {
++        self.recent.retain(|p| p != path);
++        self.recent.insert(0, path.to_owned());
++        self.recent.truncate(12);
++    }
++
++    fn open_file(&mut self, path: PathBuf) {
++        if path.is_dir() { self.workspace = Some(path); self.persist(); return; }
++        let canonical = fs::canonicalize(&path).unwrap_or(path);
++        if let Some(i) = self.docs.iter().position(|d| d.path.as_ref() == Some(&canonical)) {
++            self.active = i;
++            self.clear_search();
++            return;
++        }
++        let id = self.alloc_id();
++        match Document::from_file(id, canonical.clone()) {
++            Ok(doc) => {
++                if doc.mixed_endings {
++                    self.show_notice("This file contains mixed newline styles. Saving will normalize them to the predominant style.");
++                }
++                self.docs.push(doc);
++                self.active = self.docs.len() - 1;
++                self.track_recent(&canonical);
++                self.clear_search();
++                self.persist();
++            }
++            Err(err) => self.show_error(format!("{}: {err}", canonical.display())),
++        }
++    }
++
++    fn save_active(&mut self, as_new: bool, force: bool) -> bool {
++        if self.docs.is_empty() { return false; }
++        let original_path = self.docs[self.active].path.clone();
++        let path = if !as_new { original_path } else { None };
++        let path = match path {
++            Some(path) => path,
++            None => {
++                let dialog = rfd::FileDialog::new().set_title("Save document");
++                let dialog = if let Some(dir) = self.docs[self.active].path.as_ref().and_then(|p| p.parent()) {
++                    dialog.set_directory(dir)
++                } else if let Some(dir) = &self.workspace { dialog.set_directory(dir) } else { dialog };
++                let dialog = dialog.set_file_name(&self.docs[self.active].title());
++                match dialog.save_file() { Some(path) => path, None => return false }
++            }
++        };
++        // A native Save As dialog can return a different spelling (relative path,
++        // symbolic link, 8.3 filename or changed letter case) of an already open
++        // file. Normalize existing destinations before checking for collisions.
++        let normalized = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
++        if self.docs.iter().enumerate().any(|(index, doc)| {
++            index != self.active && doc.path.as_ref().is_some_and(|other| {
++                fs::canonicalize(other).unwrap_or_else(|_| other.clone()) == normalized
++            })
++        }) {
++            self.show_error("This file is already open in another tab. Choose a different Save As destination.");
++            return false;
++        }
++        // Save As must not silently bypass the external-change check when the
++        // chosen destination is actually the current document.
++        let result = self.docs[self.active].save(&normalized, force && !as_new);
++        match result {
++            Ok(()) => {
++                self.track_recent(&normalized);
++                self.status = format!("Saved {}", normalized.display());
++                self.persist();
++                true
++            }
++            Err(e) => { self.show_error(e); false }
++        }
++    }
++
++    fn save_all(&mut self) {
++        let initial = self.active;
++        for index in 0..self.docs.len() {
++            if self.docs[index].dirty {
++                self.active = index;
++                if !self.save_active(false, false) { break; }
++            }
++        }
++        self.active = initial.min(self.docs.len().saturating_sub(1));
++    }
++
++    fn close_doc(&mut self, id: u64) {
++        let Some(index) = self.docs.iter().position(|d| d.id == id) else { return; };
++        if self.docs[index].dirty { self.pending_close = Some(id); return; }
++        self.remove_doc(id);
++    }
++    fn remove_doc(&mut self, id: u64) {
++        if let Some(index) = self.docs.iter().position(|d| d.id == id) {
++            self.docs.remove(index);
++            if self.docs.is_empty() { self.add_empty(); }
++            else if self.active >= self.docs.len() { self.active = self.docs.len() - 1; }
++            else if index < self.active { self.active -= 1; }
++            self.clear_search();
++            self.persist();
++        }
++    }
++
++    fn refresh_search(&mut self) {
++        let Some(doc) = self.active_doc() else { return; };
++        let result = search::find(&doc.text, &self.find.term, self.find.regex,
++                                  self.find.case_sensitive, 20_000);
++        match result {
++            Ok(m) => {
++                self.find.results = m;
++                self.find.selected = self.find.selected.min(self.find.results.locations.len().saturating_sub(1));
++                self.find.error.clear();
++            }
++            Err(e) => { self.find.results = search::Matches::default(); self.find.error = e; }
++        }
++    }
++
++    fn jump_match(&mut self, forwards: bool) {
++        let len = self.find.results.locations.len();
++        if len == 0 { return; }
++        self.find.selected = if forwards { (self.find.selected + 1) % len }
++                             else { (self.find.selected + len - 1) % len };
++        self.select_match();
++    }
++    fn select_match(&mut self) {
++        let Some(&(a,b)) = self.find.results.locations.get(self.find.selected) else { return; };
++        if let Some(doc) = self.active_doc() {
++            self.jump = Some(search::byte_range_to_chars(&doc.text, a, b));
++        }
++    }
++
++    fn replace_one(&mut self) {
++        if self.find.term.is_empty() { return; }
++        let index = self.find.selected;
++        let replacement = self.find.replace.clone();
++        let Some(&(a,b)) = self.find.results.locations.get(index) else { return; };
++        if let Some(doc) = self.active_doc_mut() {
++            if doc.text.is_char_boundary(a) && doc.text.is_char_boundary(b) {
++                // Single replacement is literal; Replace All supports regex capture expansion.
++                doc.text.replace_range(a..b, &replacement);
++                doc.dirty = true;
++            }
++        }
++        self.refresh_search();
++        if !self.find.results.locations.is_empty() {
++            self.find.selected = index.min(self.find.results.locations.len()-1);
++            self.select_match();
++        }
++    }
++    fn replace_all(&mut self) {
++        let Some(doc) = self.active_doc() else { return; };
++        let result = search::replace_all(&doc.text, &self.find.term, &self.find.replace,
++                                         self.find.regex, self.find.case_sensitive);
++        match result {
++            Ok((text,count)) => {
++                if count > 0 {
++                    if let Some(doc) = self.active_doc_mut() { doc.text = text; doc.dirty = true; }
++                    self.refresh_search();
++                }
++                self.status = format!("Replaced {count} occurrence(s)");
++            }
++            Err(e) => self.show_error(e),
++        }
++    }
++
++    fn jump_to_line(&mut self, line: usize) {
++        if let Some(doc) = self.active_doc() {
++            let byte = search::byte_offset_for_line(&doc.text, line);
++            let char_position = doc.text[..byte].chars().count();
++            self.jump = Some((char_position, char_position));
++            self.status = format!("Go to line {line}");
++        }
++    }
++
++    fn transform_text(&mut self, action: &Action) {
++        let Some(doc) = self.active_doc() else { return; };
++        let original = doc.text.clone();
++        let result: Result<String,String> = match action {
++            Action::JsonPretty => serde_json::from_str::<serde_json::Value>(&original)
++                .and_then(|v| serde_json::to_string_pretty(&v)).map_err(|e| e.to_string()),
++            Action::JsonCompact => serde_json::from_str::<serde_json::Value>(&original)
++                .and_then(|v| serde_json::to_string(&v)).map_err(|e| e.to_string()),
++            Action::TrimTrailingWhitespace => Ok(original.split('\n')
++                .map(|s| s.trim_end_matches(|c| c == ' ' || c == '\t')).collect::<Vec<_>>().join("\n")),
++            Action::SortLines => {
++                let mut lines = original.split('\n').collect::<Vec<_>>();
++                lines.sort_unstable();
++                Ok(lines.join("\n"))
++            }
++            _ => return,
++        };
++        match result {
++            Ok(updated) => {
++                if updated != original {
++                    if let Some(doc) = self.active_doc_mut() { doc.text = updated; doc.dirty = true; }
++                    self.refresh_search();
++                    self.status = "Document transformed (Ctrl+Z to undo in editor may not apply to menu transforms; use backups)".into();
++                }
++            }
++            Err(err) => self.show_error(format!("Format failed: {err}")),
++        }
++    }
++
++    fn run_cargo(&mut self, action: CargoAction) {
++        if self.task_running { self.show_notice("A Cargo command is already running"); return; }
++        let base = self.workspace.clone().or_else(|| self.active_doc().and_then(|d| d.path.as_ref())
++            .and_then(|p| p.parent()).map(Path::to_path_buf));
++        let manifest_dir = base.and_then(|p| p.ancestors().take(12)
++            .find(|ancestor| ancestor.join("Cargo.toml").is_file()).map(Path::to_path_buf));
++        let Some(directory) = manifest_dir else {
++            self.show_error("Open a Rust workspace with Cargo.toml before using Cargo tools");
++            return;
++        };
++        let tx = self.task_tx.clone();
++        self.task_running = true; self.show_console = true;
++        self.console = format!("Running {} in {}\n\n", action.label(), directory.display());
++        thread::spawn(move || {
++            let result = Command::new("cargo").args(action.args()).current_dir(directory).output();
++            let output = match result {
++                Ok(out) => {
++                    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
++                    combined.push_str(&String::from_utf8_lossy(&out.stderr));
++                    if combined.len() > 250_000 {
++                        let cut = combined.char_indices().map(|(i,_)| i)
++                            .find(|i| *i >= combined.len()-250_000).unwrap_or(0);
++                        combined = format!("[Truncated older output]\n{}", &combined[cut..]);
++                    }
++                    combined.push_str(&format!("\nExit status: {}", out.status));
++                    combined
++                }
++                Err(e) => format!("Could not start cargo: {e}\nInstall Rust from https://rustup.rs/ and retry"),
++            };
++            let _ = tx.send(TaskResult { title: action.label().to_string(), output });
++        });
++    }
++
++    fn run_workspace_search(&mut self) {
++        if self.workspace_search_running { return; }
++        let Some(root) = self.workspace.clone() else {
++            self.show_error("Open a folder first to search its files"); return;
++        };
++        if self.find.term.is_empty() {
++            self.show_error("Enter a search term in the Find bar first"); return;
++        }
++        let term = self.find.term.clone();
++        let regex = self.find.regex;
++        let case_sensitive = self.find.case_sensitive;
++        let tx = self.search_tx.clone();
++        self.workspace_search_running = true;
++        self.workspace_hits.clear();
++        self.workspace_search_summary = "Searching workspace...".into();
++        self.show_console = true;
++        thread::spawn(move || {
++            let report = workspace::search_workspace(&root, &term, regex, case_sensitive);
++            let _ = tx.send(report);
++        });
++    }
++
++    fn execute(&mut self, action: Action, ctx: &egui::Context) {
++        match action {
++            Action::New => { self.add_empty(); self.persist(); }
++            Action::OpenDialog => {
++                let mut dialog = rfd::FileDialog::new().set_title("Open text or source file");
++                if let Some(root) = &self.workspace { dialog = dialog.set_directory(root); }
++                if let Some(paths) = dialog.pick_files() { for path in paths { self.open_file(path); } }
++            }
++            Action::OpenFile(path) => self.open_file(path),
++            Action::OpenFolder => {
++                if let Some(path) = rfd::FileDialog::new().set_title("Open workspace folder").pick_folder() {
++                    self.workspace = Some(path); self.persist();
++                }
++            }
++            Action::Save => { self.save_active(false, false); }
++            Action::SaveAs => { self.save_active(true, true); }
++            Action::SaveAll => self.save_all(),
++            Action::SaveForce => { self.save_active(false, true); }
++            Action::Close(id) => self.close_doc(id),
++            Action::Select(index) => {
++                if index < self.docs.len() { self.active = index; self.cursor_char = 0; self.clear_search(); self.refresh_search(); }
++            }
++            Action::RefreshSearch => { self.find.selected=0; self.refresh_search(); self.select_match(); }
++            Action::FindNext(forwards) => self.jump_match(forwards),
++            Action::ReplaceOne => self.replace_one(),
++            Action::ReplaceAll => self.replace_all(),
++            Action::Goto(line) => self.jump_to_line(line),
++            Action::ToggleFind => { self.find.open = true; self.refresh_search(); }
++            Action::ToggleGoto => { self.goto_open = !self.goto_open; }
++            Action::TogglePreview => { self.show_preview = !self.show_preview; }
++            Action::ToggleExplorer => { self.show_explorer = !self.show_explorer; self.persist(); }
++            Action::ComponentsSettings => { self.components_open = true; }
++            Action::JsonPretty | Action::JsonCompact | Action::TrimTrailingWhitespace | Action::SortLines => self.transform_text(&action),
++            Action::Cargo(which) => self.run_cargo(which),
++            Action::ToggleTheme => {
++                self.dark = !self.dark;
++                components::theme::apply(ctx, self.dark);
++            }
++            Action::FontSize(change) => self.font_size = (self.font_size + change).clamp(10.0, 28.0),
++            Action::SearchWorkspace => self.run_workspace_search(),
++            Action::OpenAt(path, line) => {
++                let canonical = fs::canonicalize(&path).unwrap_or(path);
++                self.open_file(canonical.clone());
++                if self.active_doc().and_then(|d| d.path.as_ref()) == Some(&canonical) {
++                    self.jump_to_line(line);
++                }
++            },
++            Action::ReloadFile => {
++                if let Some(doc) = self.active_doc() {
++                    if doc.dirty { self.show_error("Save or close the modified tab before reloading from disk"); }
++                    else if let Some(path) = doc.path.clone() {
++                        let id = doc.id;
++                        match Document::from_file(id, path) {
++                            Ok(new_doc) => { self.docs[self.active] = new_doc; self.refresh_search(); }
++                            Err(err) => self.show_error(err),
++                        }
++                    }
++                }
++            }
++            Action::ShowHelp => { self.show_help = true; }
++            Action::ToggleAi => self.ai.visible = !self.ai.visible,
++            Action::AiSettings => self.ai.settings_open = true,
++        }
++        ctx.request_repaint();
++    }
++
++    fn collect_shortcuts(&self, ctx: &egui::Context, actions: &mut Vec<Action>) {
++        ctx.input(|i| {
++            let ctrl = i.modifiers.ctrl || i.modifiers.command;
++            if ctrl && i.key_pressed(Key::N) { actions.push(Action::New); }
++            if ctrl && i.key_pressed(Key::O) { actions.push(Action::OpenDialog); }
++            if ctrl && i.key_pressed(Key::S) {
++                actions.push(if i.modifiers.shift { Action::SaveAs } else { Action::Save });
++            }
++            if ctrl && i.key_pressed(Key::W) {
++                if let Some(doc) = self.active_doc() { actions.push(Action::Close(doc.id)); }
++            }
++            if ctrl && i.key_pressed(Key::F) { actions.push(Action::ToggleFind); }
++            if ctrl && i.key_pressed(Key::H) { actions.push(Action::ToggleFind); }
++            if ctrl && i.key_pressed(Key::G) { actions.push(Action::ToggleGoto); }
++            if ctrl && i.key_pressed(Key::Equals) { actions.push(Action::FontSize(1.0)); }
++            if ctrl && i.key_pressed(Key::Minus) { actions.push(Action::FontSize(-1.0)); }
++            if i.key_pressed(Key::F3) { actions.push(Action::FindNext(!i.modifiers.shift)); }
++        });
++    }
++
++}
++impl Drop for EditorApp {
++    fn drop(&mut self) { self.persist(); }
++}
++
++impl eframe::App for EditorApp {
++    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
++        self.ai.poll();
++        while let Ok(result) = self.task_rx.try_recv() {
++            self.task_running = false;
++            self.console.push_str(&format!("\n=== {} ===\n{}\n", result.title, result.output));
++            self.status = format!("{} finished", result.title);
++        }
++        while let Ok(report) = self.search_rx.try_recv() {
++            self.workspace_search_running = false;
++            self.workspace_search_summary = if let Some(error) = report.error {
++                format!("Workspace search error: {error}")
++            } else {
++                format!("Workspace: {} hits, {} files scanned, {} skipped (limit 1,000 hits)",
++                    report.hits.len(), report.visited, report.skipped)
++            };
++            self.workspace_hits = report.hits;
++        }
++        let mut actions = Vec::new();
++        self.collect_shortcuts(ctx, &mut actions);
++        let drops: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
++        for path in drops { actions.push(Action::OpenFile(path)); }
++        components::draw(self, ctx, &mut actions);
++        for action in actions { self.execute(action, ctx); }
++        if self.last_recovery.elapsed() >= Duration::from_secs(15) {
++            self.persist(); self.last_recovery = Instant::now();
++        }
++        ctx.request_repaint_after(Duration::from_millis(300));
++    }
++}
++
++#[cfg(test)]
++mod component_state_tests {
++    use super::*;
++
++    #[test]
++    fn old_session_restores_without_component_preferences() {
++        let old = r#"{"docs":[],"active":0,"workspace":null,"recent":[],"dark":true,"font_size":14.0}"#;
++        let session: Session = serde_json::from_str(old).expect("old session format should be readable");
++        assert!(session.show_explorer);
++        assert!(!session.show_search);
++        assert!(!session.show_preview);
++        assert!(!session.show_console);
++        assert!(!session.show_ai);
++    }
++
++    #[test]
++    fn externally_deleted_document_is_not_silently_recreated() {
++        let dir = std::env::temp_dir().join(format!("toneedit-external-delete-{}", std::process::id()));
++        let _ = fs::remove_dir_all(&dir);
++        fs::create_dir_all(&dir).unwrap();
++        let path = dir.join("source.rs");
++        fs::write(&path, "original").unwrap();
++        let mut doc = Document::from_file(1, path.clone()).unwrap();
++        fs::remove_file(&path).unwrap();
++        doc.text = "new content".into();
++        doc.dirty = true;
++        assert!(doc.save(&path, false).is_err());
++        assert!(!path.exists());
++        assert!(doc.save(&path, true).is_ok());
++        assert_eq!(fs::read_to_string(&path).unwrap(), "new content");
++        fs::remove_dir_all(&dir).unwrap();
++    }
++
++    #[test]
++    fn workbench_renders_in_headless_egui_context() {
++        // No native window is required: exercise registration and layout of
++        // every visible Rust component during cargo test.
++        let ctx = egui::Context::default();
++        let mut app = EditorApp::new(&ctx);
++        app.state_path = std::env::temp_dir().join(format!("toneedit-render-test-{}.json", std::process::id()));
++        let _ = ctx.run(egui::RawInput::default(), |ctx| {
++            let mut actions = Vec::new();
++            components::draw(&mut app, ctx, &mut actions);
++        });
++        assert!(!app.docs.is_empty());
++        let path = app.state_path.clone();
++        drop(app);
++        let _ = fs::remove_file(path);
++    }
++}
+diff --git a/src/search.rs b/src/search.rs
+new file mode 100644
+index 0000000..f754155
+--- /dev/null
++++ b/src/search.rs
+@@ -0,0 +1,84 @@
++//! Unicode-safe text searching and replacing. Match offsets are UTF-8 byte ranges.
++use regex::{Regex, RegexBuilder};
++
++#[derive(Clone, Debug, Default)]
++pub struct Matches {
++    pub locations: Vec<(usize, usize)>,
++    pub truncated: bool,
++}
++
++pub fn matcher(query: &str, regex_mode: bool, case_sensitive: bool) -> Result<Regex, String> {
++    if query.is_empty() { return Err("Search term is empty".into()); }
++    let pattern = if regex_mode { query.to_string() } else { regex::escape(query) };
++    RegexBuilder::new(&pattern)
++        .case_insensitive(!case_sensitive)
++        .multi_line(true)
++        .build().map_err(|e| format!("Invalid search expression: {e}"))
++}
++
++pub fn find(text: &str, query: &str, regex_mode: bool, case_sensitive: bool, limit: usize)
++    -> Result<Matches, String> {
++    if crate::gentaro::skip_search(query).unwrap_or(query.is_empty()) {
++        return Ok(Matches::default());
++    }
++    let regex = matcher(query, regex_mode, case_sensitive)?;
++    let mut locations = Vec::new();
++    let mut truncated = false;
++    for m in regex.find_iter(text) {
++        if locations.len() >= limit { truncated = true; break; }
++        locations.push((m.start(), m.end()));
++    }
++    Ok(Matches { locations, truncated })
++}
++
++pub fn replace_all(text: &str, query: &str, replacement: &str, regex_mode: bool,
++                   case_sensitive: bool) -> Result<(String, usize), String> {
++    let regex = matcher(query, regex_mode, case_sensitive)?;
++    let count = regex.find_iter(text).count();
++    if count == 0 { return Ok((text.to_owned(), 0)); }
++    let updated = if regex_mode {
++        regex.replace_all(text, replacement).into_owned()
++    } else {
++        regex.replace_all(text, regex::NoExpand(replacement)).into_owned()
++    };
++    Ok((updated, count))
++}
++
++pub fn byte_range_to_chars(text: &str, a: usize, b: usize) -> (usize, usize) {
++    (text[..a].chars().count(), text[..b].chars().count())
++}
++
++pub fn byte_offset_for_line(text: &str, line_one_based: usize) -> usize {
++    if line_one_based <= 1 { return 0; }
++    text.match_indices('\n').nth(line_one_based - 2)
++        .map(|(idx, _)| idx + 1).unwrap_or(text.len())
++}
++
++pub fn line_col_at_char(text: &str, char_pos: usize) -> (usize, usize) {
++    let mut line = 1; let mut col = 1;
++    for ch in text.chars().take(char_pos) {
++        if ch == '\n' { line += 1; col = 1; } else { col += 1; }
++    }
++    (line, col)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test] fn unicode_ranges_and_case() {
++        let text = "あa\nあA";
++        let matches = find(text, "あ", false, true, 99).unwrap();
++        assert_eq!(matches.locations, vec![(0, 3), (5, 8)]);
++        assert_eq!(byte_range_to_chars(text, 5, 8), (3, 4));
++        assert_eq!(find(text, "a", false, false, 9).unwrap().locations.len(), 2);
++    }
++    #[test] fn regex_groups_and_literal_dollar() {
++        assert_eq!(replace_all("a12 b34", r"([a-z])(\d+)", "$2-$1", true, true).unwrap().0, "12-a 34-b");
++        assert_eq!(replace_all("one one", "one", "$5", false, true).unwrap().0, "$5 $5");
++    }
++    #[test] fn line_offsets() {
++        assert_eq!(byte_offset_for_line("a\nあ\nx", 3), 6);
++        assert_eq!(line_col_at_char("a\nあ\nx", 3), (2, 2));
++    }
++    #[test] fn invalid_regex() { assert!(matcher("[", true, true).is_err()); }
++}
+diff --git "a/\350\250\200\345\244\252\351\203\216_\347\247\273\346\244\215\347\212\266\346\263\201.md" "b/\350\250\200\345\244\252\351\203\216_\347\247\273\346\244\215\347\212\266\346\263\201.md"
+new file mode 100644
+index 0000000..b8d738f
+--- /dev/null
++++ "b/\350\250\200\345\244\252\351\203\216_\347\247\273\346\244\215\347\212\266\346\263\201.md"
+@@ -0,0 +1,42 @@
++# ToneEdit Studio 言太郎移植状況
++
++**製品:** ToneEdit Studio / MIT / 完全無料 / Windows 64-bit
++
++**基本方針:** 言太郎 > Rust。不可能な箇所のみRustで補完。言太郎への機能追加要件を必ず記録する。HTML・Python禁止、ADAF/個人ペルソナとの連携なし。
++
++## 実際に書き換えた機能
++
++1. 製品名表示とライセンスに関する規則
++2. タブの変更マークの付加
++3. 元ファイルの存在・変更時刻・内容ハッシュによる保存拒否規則
++4. 空文字検索の抑止
++5. AI事業者・接続先変更時の会話履歴分離
++6. OSの資格情報保管からAPIキーを取得する必要性の判定
++7. OpenAI互換 / Anthropic / Gemini APIのプロトコル分岐
++8. Windowsインストール先パスの安全性判定
++9. AI送信中・空入力・サイズ超過時の送信拒否
++10. ステータスバーの保存状態の日本語表示
++11. Windowsアンインストール時の所有者確認・設置先保護
++
++上記は `.tone` の関数を `src/gentaro.rs` のRustネイティブ実行器で呼び出す形で既存コードへ組み込みました。全ての主要コンポーネントを `.tone` に置き換えたわけではありません。表示・保存など危険を伴う処理はRustの二重防御を残します。
++
++## 未移植の機能
++
++- テキストUI本体 / 複数タブ / ファイル一覧 / テーマ / ステータスバー
++- 正規表現エンジンと文字コード変換
++- AIリクエストJSON生成、HTTPS送信、各社レスポンス解析
++- OAuth 2.0/PKCE と秘密情報保管
++- GUI形式のインストール・アンインストールおよびスタートメニュー登録
++- Rust Cargoの一括ビルド/Windows EXE生成
++
++各項目を言太郎で可能にするAPI・構文要件は `gentaro/feedback/言太郎_機能追加要求.md` を参照。
++
++## 検証
++
++- ソース変換は行ったが、移行版のコンパイルとWindows GUI実行は **未実施**。
++- 追加したRustテストは検証用ソースであって、合格実績ではない。
++- 旧版Windows GUI試験の0/30件問題は解決確認できていない。
++
++## 配布ファイル
++
++`ToneEdit-Studio/` ディレクトリ全体を一式として保存。Gitのリポジトリ公開・Windowsビルド・配布時には `.tone` ソースとMITライセンスを添付する。

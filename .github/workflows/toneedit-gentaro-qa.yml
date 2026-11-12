@@ -26,29 +26,46 @@ jobs:
           & $seven x -y "-oworkspace" $tar.FullName
           if ($LASTEXITCODE -ne 0) { throw 'TAR extraction failed' }
           if (!(Test-Path 'workspace/ToneEdit-Studio/Cargo.toml')) { throw 'Cargo.toml missing' }
-      - name: Apply Gentaro migration with Git patch validation
+      - name: Replace 11 version-dependent files and apply full Gentaro overlay
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          git apply --check --directory=workspace/ToneEdit-Studio toneedit/gentaro-migration.patch
-          if ($LASTEXITCODE -ne 0) { throw 'Gentaro patch validation failed' }
-          git apply --directory=workspace/ToneEdit-Studio toneedit/gentaro-migration.patch
-          if ($LASTEXITCODE -ne 0) { throw 'Gentaro patch application failed' }
-          Get-Content workspace/ToneEdit-Studio/gentaro/ToneEdit_規則.tone -TotalCount 7
+          $replace=@(
+            'Cargo.toml',
+            'packaging/setup/Cargo.toml',
+            'packaging/setup/src/main.rs',
+            'packaging/uninstall/Cargo.toml',
+            'packaging/uninstall/src/main.rs',
+            'src/ai/providers/mod.rs',
+            'src/ai.rs',
+            'src/components/editor.rs',
+            'src/components/status.rs',
+            'src/main.rs',
+            'src/search.rs'
+          )
+          foreach ($f in $replace) {
+            $target=Join-Path 'workspace/ToneEdit-Studio' $f
+            if (!(Test-Path $target)) { throw "Source file missing: $f" }
+            Remove-Item -LiteralPath $target -Force
+          }
+          git apply --check --directory=workspace/ToneEdit-Studio toneedit/gentaro-overlay.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Gentaro overlay validation failed' }
+          git apply --directory=workspace/ToneEdit-Studio toneedit/gentaro-overlay.patch
+          if ($LASTEXITCODE -ne 0) { throw 'Gentaro overlay installation failed' }
           if (!(Test-Path workspace/ToneEdit-Studio/src/gentaro.rs)) { throw 'Gentaro interpreter missing' }
       - name: Cargo unit tests including executable Gentaro policies
         shell: pwsh
         working-directory: workspace/ToneEdit-Studio
-        run: cargo test --locked
+        run: cargo test
       - name: Repeated headless editing and Gentaro logic tests (10 rounds)
         shell: pwsh
         working-directory: workspace/ToneEdit-Studio
         run: |
           $ErrorActionPreference = 'Stop'
           1..10 | ForEach-Object {
-            cargo test --locked gentaro::tests
+            cargo test gentaro::tests
             if ($LASTEXITCODE -ne 0) { throw "Gentaro test failed round $_" }
-            cargo test --locked component_state_tests::workbench_renders_in_headless_egui_context
+            cargo test component_state_tests::workbench_renders_in_headless_egui_context
             if ($LASTEXITCODE -ne 0) { throw "Headless GUI test failed round $_" }
             Write-Host "Gentaro and headless GUI: passed round $_/10"
           }
